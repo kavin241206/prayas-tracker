@@ -29,7 +29,11 @@ def load_data():
         return pd.DataFrame(), pd.DataFrame()
 
 df_inventory, df_logs = load_data()
-
+# --- DIAGNOSTIC TOOL ---
+    st.error("Here are the exact columns Python sees in your Inventory sheet:")
+    st.write(df_inventory.columns.tolist())
+    st.stop()
+    # -----------------------
 # -----------------------------------------------------------------------------
 # 3. BACKGROUND LOGIC (Same as your Excel rules)
 # -----------------------------------------------------------------------------
