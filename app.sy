@@ -15,8 +15,8 @@ st.info("Scan, check the daily limits, and help us feed the rescues!")
 # 2. CONNECT TO GOOGLE SHEETS (Your Background Excel)
 # -----------------------------------------------------------------------------
 # PASTE YOUR PUBLISHED CSV LINKS HERE
-INVENTORY_CSV_URL = "YOUR_INVENTORY_CSV_LINK_HERE"
-LOGS_CSV_URL = "YOUR_LOGS_CSV_LINK_HERE"
+INVENTORY_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRxLZLqr0_8_qb_hxJg9HjVjQX6LU4OaDESQN2dXqsonIzKnw-GuaVKQIfkvjjlVh4ZjxYst3U5j4Gi/pub?gid=0&single=true&output=csv"
+LOGS_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRxLZLqr0_8_qb_hxJg9HjVjQX6LU4OaDESQN2dXqsonIzKnw-GuaVKQIfkvjjlVh4ZjxYst3U5j4Gi/pub?gid=61294346&single=true&output=csv"
 
 @st.cache_data(ttl=30) # Refreshes data every 30 seconds in the background
 def load_data():
