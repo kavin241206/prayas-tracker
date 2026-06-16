@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 
-# 1. Page Configuration (Must remain at the top)
+# 1. Page Configuration
 st.set_page_config(
     page_title="Shelter Feeding Tracker",
     page_icon="🐾",
@@ -9,7 +9,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# 2. Advanced CSS Styling
+# 2. Advanced CSS Styling (DARK THEME)
 st.markdown("""
     <style>
     /* Import Google Font */
@@ -19,56 +19,66 @@ st.markdown("""
     html, body, [class*="css"]  {
         font-family: 'Nunito', sans-serif;
     }
+    
+    /* The main dark background gradient */
     .stApp {
-        background: linear-gradient(135deg, #fdfbfb 0%, #ebedee 100%);
+        background: linear-gradient(135deg, #0f2027 0%, #203a43 50%, #2c5364 100%);
     }
 
     /* Main Header Styling */
     .main-header {
         text-align: center;
-        color: #2E4053;
+        color: #F8F9F9; /* Bright White */
         font-weight: 800;
         font-size: 3rem;
         margin-bottom: 0px;
-        text-shadow: 1px 1px 3px rgba(0,0,0,0.1);
+        text-shadow: 2px 2px 10px rgba(0,0,0,0.6);
     }
     .sub-header {
         text-align: center;
-        color: #5D6D7E;
+        color: #BDC3C7; /* Light Silver */
         font-size: 1.2rem;
         font-weight: 600;
         margin-bottom: 40px;
     }
 
-    /* Metric Cards (Glassmorphism & Hover Effects) */
+    /* Metric Cards (Dark Glassmorphism) */
     div[data-testid="metric-container"] {
-        background: rgba(255, 255, 255, 0.7);
+        background: rgba(0, 0, 0, 0.4); /* Dark translucent background */
         backdrop-filter: blur(10px);
-        border: 1px solid rgba(255, 255, 255, 0.5);
+        border: 1px solid rgba(255, 255, 255, 0.15); /* Faint white edge */
         padding: 20px;
         border-radius: 15px;
-        box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.07);
+        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
         transition: transform 0.3s ease, box-shadow 0.3s ease;
     }
     div[data-testid="metric-container"]:hover {
         transform: translateY(-5px);
-        box-shadow: 0 12px 40px 0 rgba(31, 38, 135, 0.15);
+        box-shadow: 0 12px 40px 0 rgba(0, 0, 0, 0.6);
     }
     
     /* Metric Text Colors */
     div[data-testid="metric-container"] label {
-        color: #7F8C8D !important;
+        color: #BDC3C7 !important; /* Silver for the title */
         font-weight: 600;
     }
     div[data-testid="metric-container"] div[data-testid="stMetricValue"] {
-        color: #27AE60 !important; 
+        color: #2ECC71 !important; /* Bright Neon Green for the numbers */
     }
 
+    /* Markdown text color override (for subheaders like "Filter Records") */
+    h3 {
+        color: #E0E0E0 !important; 
+    }
+    p {
+        color: #E0E0E0 !important;
+    }
+    
     /* DataFrame Customization */
     div[data-testid="stDataFrame"] {
         border-radius: 10px;
         overflow: hidden;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+        box-shadow: 0 4px 15px rgba(0,0,0,0.5);
     }
     </style>
 """, unsafe_allow_html=True)
@@ -89,13 +99,13 @@ def load_data(sheet_url):
         st.error("Cannot connect to Google Sheets. Please check the URL and ensure it is published to the web.")
         return pd.DataFrame()
 
-# --- MAKE SURE YOUR CSV URL IS STILL PASTED HERE ---
-SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ2lKl_VmCMxoITX40Gtfu5y90Xd2a-eWouVm4f0S4udVRDeK-4jk_QhEUzQR61zFew3Ee5gwM9UJw5/pub?gid=98942158&single=true&output=csv" 
+# --- MAKE SURE TO PASTE YOUR CSV URL HERE AGAIN ---
+SHEET_URL = "YOUR_PUBLISHED_CSV_URL_HERE" 
 
 df = load_data(SHEET_URL)
 
 if not df.empty:
-    st.write("<br>", unsafe_allow_html=True) # Adds a little breathing room
+    st.write("<br>", unsafe_allow_html=True) 
     
     # 5. Dashboard Controls 
     col1, col2 = st.columns([1, 3])
@@ -108,7 +118,6 @@ if not df.empty:
     filtered_df = df[df['Date'] == selected_date]
     
     # 6. Calculate Metrics
-    # We use pd.to_numeric to prevent errors if someone types text instead of numbers in the form
     total_fed = pd.to_numeric(filtered_df['Amount Fed'], errors='coerce').sum()
     total_excess = pd.to_numeric(filtered_df['Excess Food'], errors='coerce').sum()
     
