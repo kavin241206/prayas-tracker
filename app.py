@@ -12,15 +12,12 @@ st.set_page_config(
 # 2. Advanced CSS Styling (DARK THEME WITH IMAGE BACKGROUND)
 st.markdown("""
     <style>
-    /* Import Google Font */
     @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;800&display=swap');
 
-    /* Global Typography */
     html, body, [class*="css"]  {
         font-family: 'Nunito', sans-serif;
     }
     
-    /* THE MAIN BACKROUND IMAGE STYLING */
     .stApp {
         background-color: #0d1117; 
         /* --- REPLACE THE URL BELOW WITH YOUR DIRECT ANIMAL IMAGE URL --- */
@@ -30,7 +27,6 @@ st.markdown("""
         background-position: center; 
     }
 
-    /* Main Header Styling */
     .main-header {
         text-align: center;
         color: #F8F9F9;
@@ -48,7 +44,6 @@ st.markdown("""
         text-shadow: 1px 1px 5px rgba(0,0,0,0.6);
     }
 
-    /* Metric Cards (Dark Glassmorphism) */
     div[data-testid="metric-container"] {
         background: rgba(0, 0, 0, 0.6); 
         backdrop-filter: blur(8px); 
@@ -63,7 +58,6 @@ st.markdown("""
         box-shadow: 0 12px 40px 0 rgba(0, 0, 0, 0.8);
     }
     
-    /* Metric Text Colors */
     div[data-testid="metric-container"] label {
         color: #BDC3C7 !important;
         font-weight: 600;
@@ -72,13 +66,11 @@ st.markdown("""
         color: #2ECC71 !important; 
     }
 
-    /* Markdown text color override */
     h3, p, label {
         color: #F8F9F9 !important; 
         text-shadow: 1px 1px 3px rgba(0,0,0,0.5);
     }
     
-    /* Selectbox Styling */
     div[data-testid="stSelectbox"] label {
         color: #F8F9F9 !important;
     }
@@ -89,7 +81,6 @@ st.markdown("""
         border-radius: 8px;
     }
     
-    /* DataFrame Customization */
     div[data-testid="stDataFrame"] {
         border-radius: 10px;
         overflow: hidden;
@@ -106,17 +97,37 @@ st.markdown("""
 st.markdown("<h1 class='main-header'>🐾 Animal Shelter Tracker</h1>", unsafe_allow_html=True)
 st.markdown("<p class='sub-header'>Daily monitoring of nutritional intake and excess</p>", unsafe_allow_html=True)
 
-# 4. Load Data Function
+# 4. UPGRADED: Smart Load Data Function
 @st.cache_data(ttl=60)
 def load_data(sheet_url):
     try:
         df = pd.read_csv(sheet_url)
-        # UPDATED: Added 'Animal ID' into the column structure
-        df.columns = ['Timestamp', 'Date', 'Cage Name', 'Animal ID', 'Animal Name', 'Fed By', 'Amount Fed', 'Excess Food']
-        df['Date'] = pd.to_datetime(df['Date']).dt.date
+        
+        # This maps the columns dynamically based on keywords. 
+        # Column order in Google Sheets no longer matters!
+        rename_dict = {}
+        for col in df.columns:
+            lower_col = col.lower()
+            if 'date' in lower_col: rename_dict[col] = 'Date'
+            elif 'cage' in lower_col: rename_dict[col] = 'Cage Name'
+            elif 'id' in lower_col: rename_dict[col] = 'Animal ID'
+            elif 'name' in lower_col: rename_dict[col] = 'Animal Name'
+            elif 'fed by' in lower_col or 'person' in lower_col: rename_dict[col] = 'Fed By'
+            elif 'amount' in lower_col: rename_dict[col] = 'Amount Fed'
+            elif 'excess' in lower_col: rename_dict[col] = 'Excess Food'
+            
+        df = df.rename(columns=rename_dict)
+        
+        # Ensures the app doesn't crash if a column is entirely missing
+        expected_cols = ['Date', 'Cage Name', 'Animal ID', 'Animal Name', 'Fed By', 'Amount Fed', 'Excess Food']
+        for c in expected_cols:
+            if c not in df.columns:
+                df[c] = 'N/A'
+
+        df['Date'] = pd.to_datetime(df['Date'], errors='coerce').dt.date
         return df
     except Exception as e:
-        st.error(f"Cannot connect to Google Sheets or column mismatch. Error details: {e}")
+        st.error(f"Cannot connect to Google Sheets. Error details: {e}")
         return pd.DataFrame()
 
 # --- PASTE YOUR CSV URL HERE ---
@@ -137,9 +148,13 @@ if not df.empty:
     
     filtered_df = df[df['Date'] == selected_date]
     
-    # 6. Calculate Metrics
-    total_fed = pd.to_numeric(filtered_df['Amount Fed'], errors='coerce').sum()
-    total_excess = pd.to_numeric(filtered_df['Excess Food'], errors='coerce').sum()
+    # 6. UPGRADED: Calculate Metrics with text stripping
+    # This automatically removes letters like "kg" or "lbs" so the math still works perfectly
+    clean_fed = filtered_df['Amount Fed'].astype(str).str.replace(r'[^\d.]', '', regex=True)
+    total_fed = pd.to_numeric(clean_fed, errors='coerce').sum()
+    
+    clean_excess = filtered_df['Excess Food'].astype(str).str.replace(r'[^\d.]', '', regex=True)
+    total_excess = pd.to_numeric(clean_excess, errors='coerce').sum()
     
     with col2:
         m1, m2, m3 = st.columns(3)
@@ -150,7 +165,7 @@ if not df.empty:
     st.divider()
     st.markdown("### 📋 Detailed Feeding Log")
     
-    # 7. Display Data (UPDATED: Added 'Animal ID' to the visible table)
+    # 7. Display Data
     st.dataframe(
         filtered_df[['Cage Name', 'Animal ID', 'Animal Name', 'Fed By', 'Amount Fed', 'Excess Food']],
         use_container_width=True,
