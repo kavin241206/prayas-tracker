@@ -12,13 +12,16 @@ st.markdown("**Live Enclosure Feeding Tracker**")
 st.info("Scan, check the daily limits, and help us feed the rescues!")
 
 # -----------------------------------------------------------------------------
-# 2. CONNECT TO GOOGLE SHEETS (Your Background Excel)
+# 2. CONNECT TO GOOGLE SHEETS & GOOGLE FORMS
 # -----------------------------------------------------------------------------
-# PASTE YOUR PUBLISHED CSV LINKS HERE
-INVENTORY_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRxLZLqr0_8_qb_hxJg9HjVjQX6LU4OaDESQN2dXqsonIzKnw-GuaVKQIfkvjjlVh4ZjxYst3U5j4Gi/pub?gid=0&single=true&output=csv"
-LOGS_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRxLZLqr0_8_qb_hxJg9HjVjQX6LU4OaDESQN2dXqsonIzKnw-GuaVKQIfkvjjlVh4ZjxYst3U5j4Gi/pub?gid=61294346&single=true&output=csv"
+# PASTE YOUR PUBLISHED CSV LINKS HERE inside the quotation marks:
+# Link 1: The 'Inventory' tab
+INVENTORY_CSV_URL = "YOUR_INVENTORY_CSV_LINK_HERE"
 
-@st.cache_data(ttl=30) # Refreshes data every 30 seconds in the background
+# Link 2: The 'Form Responses 1' tab (Where Google Forms sends the data)
+LOGS_CSV_URL = "YOUR_FORM_RESPONSES_CSV_LINK_HERE"
+
+@st.cache_data(ttl=30) # Refreshes data every 30 seconds
 def load_data():
     try:
         df_inv = pd.read_csv(INVENTORY_CSV_URL)
@@ -31,22 +34,30 @@ def load_data():
 df_inventory, df_logs = load_data()
 
 # -----------------------------------------------------------------------------
-# 3. BACKGROUND LOGIC (Same as your Excel rules)
+# 3. BACKGROUND LOGIC & CALCULATIONS
 # -----------------------------------------------------------------------------
 if not df_inventory.empty:
-    # Calculate target for today
+    # Calculate target daily total based on current animal count
     df_inventory["Target_Kg"] = df_inventory["Animal_Count"] * df_inventory["Quota_Per_Animal"]
     
     # Filter logs for TODAY only
     today_str = datetime.date.today().strftime("%Y-%m-%d")
     
     if not df_logs.empty and "Date" in df_logs.columns:
-        # Ensure dates are strings for comparison
+        # Ensure dates are strings for accurate comparison
         df_logs["Date"] = df_logs["Date"].astype(str)
-        logs_today = df_logs[df_logs["Date"] == today_str]
         
-        # Sum food given today per cage
-        fed_today = logs_today.groupby("Cage_Name")["Food_Given_Kg"].sum().reset_index()
+        # Keep only the rows where the Date matches today's date
+        logs_today = df_logs[df_logs["Date"].str.contains(today_str, na=False)]
+        
+        # Sum food given today per cage using the EXACT Google Form question names
+        fed_today = logs_today.groupby("Cage Name")["Food Given (Kg)"].sum().reset_index()
+        
+        # Rename the columns to match our internal math variables
+        fed_today = fed_today.rename(columns={
+            "Cage Name": "Cage_Name", 
+            "Food Given (Kg)": "Food_Given_Kg"
+        })
     else:
         # If no logs exist yet today, create an empty framework
         fed_today = pd.DataFrame(columns=["Cage_Name", "Food_Given_Kg"])
@@ -55,16 +66,17 @@ if not df_inventory.empty:
     df_dashboard = pd.merge(df_inventory, fed_today, on="Cage_Name", how="left")
     df_dashboard["Food_Given_Kg"] = df_dashboard["Food_Given_Kg"].fillna(0.0)
     
-    # Calculate remaining
+    # Calculate remaining food needed
     df_dashboard["Remaining_Kg"] = df_dashboard["Target_Kg"] - df_dashboard["Food_Given_Kg"]
+    # Prevent remaining numbers from going negative if an enclosure is overfed
     df_dashboard["Remaining_Kg"] = df_dashboard["Remaining_Kg"].apply(lambda x: max(0.0, x))
 
     # -----------------------------------------------------------------------------
-    # 4. MOBILE INTERFACE (What the donor sees)
+    # 4. MOBILE INTERFACE (What the volunteer sees)
     # -----------------------------------------------------------------------------
     st.markdown("### Today's Status")
     
-    # Create visual cards for each cage
+    # Create visual cards for each enclosure
     for _, row in df_dashboard.iterrows():
         cage = row["Cage_Name"]
         target = row["Target_Kg"]
@@ -74,13 +86,10 @@ if not df_inventory.empty:
         # Determine color status
         if remaining == 0:
             status_color = "🟢"
-            status_text = "Fully Fed"
         elif fed > 0:
             status_color = "🟡"
-            status_text = "Needs More"
         else:
             status_color = "🔴"
-            status_text = "Empty - Needs Food!"
             
         # Display the data in a clean mobile card format
         with st.container():
