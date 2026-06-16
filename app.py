@@ -128,4 +128,4 @@ if not df.empty:
         hide_index=True
     )
 else:
-    st.info("Awaiting data... Please submit a response through the Google Form.")v
+    st.info("Awaiting data... Please submit a response through the Google Form.")
