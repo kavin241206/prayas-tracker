@@ -16,10 +16,10 @@ st.info("Scan, check the daily limits, and help us feed the rescues!")
 # -----------------------------------------------------------------------------
 # PASTE YOUR PUBLISHED CSV LINKS HERE inside the quotation marks:
 # Link 1: The 'Inventory' tab
-INVENTORY_CSV_URL = "YOUR_INVENTORY_CSV_LINK_HERE"
+INVENTORY_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRxLZLqr0_8_qb_hxJg9HjVjQX6LU4OaDESQN2dXqsonIzKnw-GuaVKQIfkvjjlVh4ZjxYst3U5j4Gi/pub?gid=0&single=true&output=csv"
 
 # Link 2: The 'Form Responses 1' tab (Where Google Forms sends the data)
-LOGS_CSV_URL = "YOUR_FORM_RESPONSES_CSV_LINK_HERE"
+LOGS_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRxLZLqr0_8_qb_hxJg9HjVjQX6LU4OaDESQN2dXqsonIzKnw-GuaVKQIfkvjjlVh4ZjxYst3U5j4Gi/pub?gid=1944216603&single=true&output=csv"
 
 @st.cache_data(ttl=30) # Refreshes data every 30 seconds
 def load_data():
