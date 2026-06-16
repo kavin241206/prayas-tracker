@@ -9,7 +9,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# 2. Advanced CSS Styling (DARK THEME WITH IMAGE BACKGROUND)
+# 2. Advanced CSS Styling
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;800&display=swap');
@@ -97,14 +97,12 @@ st.markdown("""
 st.markdown("<h1 class='main-header'>🐾 Animal Shelter Tracker</h1>", unsafe_allow_html=True)
 st.markdown("<p class='sub-header'>Daily monitoring of nutritional intake and excess</p>", unsafe_allow_html=True)
 
-# 4. UPGRADED: Smart Load Data Function
+# 4. Smart Load Data Function
 @st.cache_data(ttl=60)
 def load_data(sheet_url):
     try:
         df = pd.read_csv(sheet_url)
         
-        # This maps the columns dynamically based on keywords. 
-        # Column order in Google Sheets no longer matters!
         rename_dict = {}
         for col in df.columns:
             lower_col = col.lower()
@@ -118,7 +116,6 @@ def load_data(sheet_url):
             
         df = df.rename(columns=rename_dict)
         
-        # Ensures the app doesn't crash if a column is entirely missing
         expected_cols = ['Date', 'Cage Name', 'Animal ID', 'Animal Name', 'Fed By', 'Amount Fed', 'Excess Food']
         for c in expected_cols:
             if c not in df.columns:
@@ -145,11 +142,16 @@ if not df.empty:
         st.markdown("### 📅 Select Filter")
         unique_dates = sorted(df['Date'].dropna().unique(), reverse=True)
         selected_date = st.selectbox("Choose a Date:", unique_dates, help="Select a date to filter feeding records.")
+        
+        st.write("<br>", unsafe_allow_html=True)
+        # NEW: Force Refresh Button
+        if st.button("🔄 Force Refresh Data", use_container_width=True):
+            st.cache_data.clear()
+            st.rerun()
     
     filtered_df = df[df['Date'] == selected_date]
     
-    # 6. UPGRADED: Calculate Metrics with text stripping
-    # This automatically removes letters like "kg" or "lbs" so the math still works perfectly
+    # 6. Calculate Metrics
     clean_fed = filtered_df['Amount Fed'].astype(str).str.replace(r'[^\d.]', '', regex=True)
     total_fed = pd.to_numeric(clean_fed, errors='coerce').sum()
     
