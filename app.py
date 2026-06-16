@@ -1,103 +1,104 @@
 import streamlit as st
 import pandas as pd
-import datetime
 
-# -----------------------------------------------------------------------------
-# 1. SETUP & CONFIGURATION
-# -----------------------------------------------------------------------------
-st.set_page_config(page_title="Prayas Live Feeding", page_icon="🐾", layout="centered")
+# 1. Page Configuration (Must be the first Streamlit command)
+st.set_page_config(
+    page_title="Shelter Feeding Tracker",
+    page_icon="🐾",
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
 
-st.title("🐾 Prayas Animal Shelter")
-st.markdown("**Live Enclosure Feeding Tracker**")
-st.info("Scan, check the daily limits, and help us feed the rescues!")
+# 2. Custom CSS for an Elegant UI
+st.markdown("""
+    <style>
+    /* Main background and font */
+    .stApp {
+        background-color: #FAFAFA;
+        font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    }
+    /* Stylish Header */
+    .main-header {
+        text-align: center;
+        color: #2C3E50;
+        font-weight: 700;
+        margin-bottom: 5px;
+    }
+    .sub-header {
+        text-align: center;
+        color: #7F8C8D;
+        font-size: 1.2rem;
+        margin-bottom: 40px;
+    }
+    /* Metric Cards Styling */
+    div[data-testid="metric-container"] {
+        background-color: #FFFFFF;
+        border: 1px solid #E0E0E0;
+        padding: 20px;
+        border-radius: 10px;
+        box-shadow: 2px 2px 10px rgba(0,0,0,0.05);
+    }
+    </style>
+""", unsafe_allow_html=True)
 
-# -----------------------------------------------------------------------------
-# 2. CONNECT TO GOOGLE SHEETS & GOOGLE FORMS
-# -----------------------------------------------------------------------------
-# PASTE YOUR PUBLISHED CSV LINKS HERE inside the quotation marks:
-# Link 1: The 'Inventory' tab
-INVENTORY_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRxLZLqr0_8_qb_hxJg9HjVjQX6LU4OaDESQN2dXqsonIzKnw-GuaVKQIfkvjjlVh4ZjxYst3U5j4Gi/pub?gid=0&single=true&output=csv"
+# 3. App Headers
+st.markdown("<h1 class='main-header'>🐾 Animal Shelter Feeding Tracker</h1>", unsafe_allow_html=True)
+st.markdown("<p class='sub-header'>Daily monitoring of nutritional intake and waste.</p>", unsafe_allow_html=True)
 
-# Link 2: The 'Form Responses 1' tab (Where Google Forms sends the data)
-LOGS_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRxLZLqr0_8_qb_hxJg9HjVjQX6LU4OaDESQN2dXqsonIzKnw-GuaVKQIfkvjjlVh4ZjxYst3U5j4Gi/pub?gid=1944216603&single=true&output=csv"
-
-@st.cache_data(ttl=30) # Refreshes data every 30 seconds
-def load_data():
+# 4. Load Data Function
+# @st.cache_data ensures the app doesn't redownload the sheet on every single click
+@st.cache_data(ttl=60) # Refreshes data every 60 seconds
+def load_data(sheet_url):
     try:
-        df_inv = pd.read_csv(INVENTORY_CSV_URL)
-        df_logs = pd.read_csv(LOGS_CSV_URL)
-        return df_inv, df_logs
+        # Read the CSV from Google Sheets
+        df = pd.read_csv(sheet_url)
+        # Rename columns to match your script logic (Change these to match your exact Google Form column headers)
+        df.columns = ['Timestamp', 'Date', 'Cage Name', 'Animal Name', 'Fed By', 'Amount Fed', 'Excess Food']
+        # Convert Date column to actual datetime objects for easy filtering
+        df['Date'] = pd.to_datetime(df['Date']).dt.date
+        return df
     except Exception as e:
-        st.error("Error loading data. Please check the Google Sheets links.")
-        return pd.DataFrame(), pd.DataFrame()
+        st.error(f"Error loading data: {e}")
+        return pd.DataFrame()
 
-df_inventory, df_logs = load_data()
+# --- INSERT YOUR GOOGLE SHEETS CSV URL HERE ---
+SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ2lKl_VmCMxoITX40Gtfu5y90Xd2a-eWouVm4f0S4udVRDeK-4jk_QhEUzQR61zFew3Ee5gwM9UJw5/pub?gid=98942158&single=true&output=csv" 
 
-# -----------------------------------------------------------------------------
-# 3. BACKGROUND LOGIC & CALCULATIONS
-# -----------------------------------------------------------------------------
-if not df_inventory.empty:
-    # Calculate target daily total based on current animal count
-    df_inventory["Target_Kg"] = df_inventory["Animal_Count"] * df_inventory["Quota_Per_Animal"]
-    
-    # Filter logs for TODAY only
-    today_str = datetime.date.today().strftime("%Y-%m-%d")
-    
-    if not df_logs.empty and "Date" in df_logs.columns:
-        # Ensure dates are strings for accurate comparison
-        df_logs["Date"] = df_logs["Date"].astype(str)
-        
-        # Keep only the rows where the Date matches today's date
-        logs_today = df_logs[df_logs["Date"].str.contains(today_str, na=False)]
-        
-        # Sum food given today per cage using the EXACT Google Form question names
-        fed_today = logs_today.groupby("Cage Name")["Food Given (Kg)"].sum().reset_index()
-        
-        # Rename the columns to match our internal math variables
-        fed_today = fed_today.rename(columns={
-            "Cage Name": "Cage_Name", 
-            "Food Given (Kg)": "Food_Given_Kg"
-        })
-    else:
-        # If no logs exist yet today, create an empty framework
-        fed_today = pd.DataFrame(columns=["Cage_Name", "Food_Given_Kg"])
+df = load_data(SHEET_URL)
 
-    # Merge inventory with today's feeding data
-    df_dashboard = pd.merge(df_inventory, fed_today, on="Cage_Name", how="left")
-    df_dashboard["Food_Given_Kg"] = df_dashboard["Food_Given_Kg"].fillna(0.0)
+if not df.empty:
+    st.divider()
     
-    # Calculate remaining food needed
-    df_dashboard["Remaining_Kg"] = df_dashboard["Target_Kg"] - df_dashboard["Food_Given_Kg"]
-    # Prevent remaining numbers from going negative if an enclosure is overfed
-    df_dashboard["Remaining_Kg"] = df_dashboard["Remaining_Kg"].apply(lambda x: max(0.0, x))
+    # 5. Dashboard Controls (Filter by Date)
+    col1, col2 = st.columns([1, 3])
+    
+    with col1:
+        st.subheader("Filter Records")
+        # Create a dropdown of unique dates available in the data
+        unique_dates = sorted(df['Date'].dropna().unique(), reverse=True)
+        selected_date = st.selectbox("Select a Date:", unique_dates)
+    
+    # Filter the dataframe based on the selected date
+    filtered_df = df[df['Date'] == selected_date]
+    
+    # 6. Calculate Metrics for the specific day
+    total_fed = filtered_df['Amount Fed'].sum()
+    total_excess = filtered_df['Excess Food'].sum()
+    
+    with col2:
+        # Display key metrics in elegant cards
+        m1, m2, m3 = st.columns(3)
+        m1.metric(label=f"Records on {selected_date}", value=len(filtered_df))
+        m2.metric(label="Total Food Fed", value=f"{total_fed:.2f} kg") # Adjust unit as needed
+        m3.metric(label="Total Excess Food", value=f"{total_excess:.2f} kg")
 
-    # -----------------------------------------------------------------------------
-    # 4. MOBILE INTERFACE (What the volunteer sees)
-    # -----------------------------------------------------------------------------
-    st.markdown("### Today's Status")
+    st.write("### 📋 Detailed Feeding Log")
     
-    # Create visual cards for each enclosure
-    for _, row in df_dashboard.iterrows():
-        cage = row["Cage_Name"]
-        target = row["Target_Kg"]
-        fed = row["Food_Given_Kg"]
-        remaining = row["Remaining_Kg"]
-        
-        # Determine color status
-        if remaining == 0:
-            status_color = "🟢"
-        elif fed > 0:
-            status_color = "🟡"
-        else:
-            status_color = "🔴"
-            
-        # Display the data in a clean mobile card format
-        with st.container():
-            st.markdown(f"#### {status_color} {cage}")
-            col1, col2, col3 = st.columns(3)
-            col1.metric("Daily Limit", f"{target:.1f} kg")
-            col2.metric("Fed Today", f"{fed:.1f} kg")
-            col3.metric("Remaining", f"{remaining:.1f} kg")
-            st.divider()
+    # Display the filtered dataframe cleanly, hiding the index
+    st.dataframe(
+        filtered_df[['Cage Name', 'Animal Name', 'Fed By', 'Amount Fed', 'Excess Food']],
+        use_container_width=True,
+        hide_index=True
+    )
 else:
-    st.warning("Awaiting data from Google Sheets...")
+    st.warning("No data found. Please ensure your Google Form has responses and the CSV link is correct.")
