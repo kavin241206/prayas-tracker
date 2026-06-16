@@ -22,23 +22,22 @@ st.markdown("""
     
     /* THE MAIN BACKROUND IMAGE STYLING */
     .stApp {
-        background-color: #0d1117; /* Dark fallback color */
+        background-color: #0d1117; 
         /* --- REPLACE THE URL BELOW WITH YOUR DIRECT ANIMAL IMAGE URL --- */
         background-image: url('https://images.unsplash.com/photo-1548199973-03cce0bbc87b?q=80&w=2669&auto=format&fit=crop&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D'); 
-        /* --- Sourcing a subtle, high-res image (e.g., from Unsplash) works best --- */
         background-repeat: no-repeat;
-        background-size: cover; /* Scale image to cover whole screen */
-        background-position: center; /* Center the image */
+        background-size: cover; 
+        background-position: center; 
     }
 
-    /* Main Header Styling (Keeping bright white) */
+    /* Main Header Styling */
     .main-header {
         text-align: center;
         color: #F8F9F9;
         font-weight: 800;
         font-size: 3rem;
         margin-bottom: 0px;
-        text-shadow: 2px 2px 10px rgba(0,0,0,0.8); /* Stronger shadow over image */
+        text-shadow: 2px 2px 10px rgba(0,0,0,0.8); 
     }
     .sub-header {
         text-align: center;
@@ -51,8 +50,8 @@ st.markdown("""
 
     /* Metric Cards (Dark Glassmorphism) */
     div[data-testid="metric-container"] {
-        background: rgba(0, 0, 0, 0.6); /* Slightly darker cards for contrast against image */
-        backdrop-filter: blur(8px); /* Less blur so image shows subtly */
+        background: rgba(0, 0, 0, 0.6); 
+        backdrop-filter: blur(8px); 
         border: 1px solid rgba(255, 255, 255, 0.1); 
         padding: 20px;
         border-radius: 15px;
@@ -64,7 +63,7 @@ st.markdown("""
         box-shadow: 0 12px 40px 0 rgba(0, 0, 0, 0.8);
     }
     
-    /* Metric Text Colors (Keeping bright silver/neon green) */
+    /* Metric Text Colors */
     div[data-testid="metric-container"] label {
         color: #BDC3C7 !important;
         font-weight: 600;
@@ -73,13 +72,13 @@ st.markdown("""
         color: #2ECC71 !important; 
     }
 
-    /* Markdown text color override (Ensuring bright white/silver is default) */
+    /* Markdown text color override */
     h3, p, label {
         color: #F8F9F9 !important; 
         text-shadow: 1px 1px 3px rgba(0,0,0,0.5);
     }
     
-    /* Selectbox Styling for Dark Mode visibility */
+    /* Selectbox Styling */
     div[data-testid="stSelectbox"] label {
         color: #F8F9F9 !important;
     }
@@ -95,9 +94,8 @@ st.markdown("""
         border-radius: 10px;
         overflow: hidden;
         box-shadow: 0 4px 15px rgba(0,0,0,0.7);
-        background: rgba(0,0,0,0.5); /* Slightly darker table background */
+        background: rgba(0,0,0,0.5); 
     }
-    /* Style table header text for visibility against darker background */
     [data-testid="stDataFrame"] table thead tr th {
         color: #E0E0E0 !important;
     }
@@ -113,14 +111,15 @@ st.markdown("<p class='sub-header'>Daily monitoring of nutritional intake and ex
 def load_data(sheet_url):
     try:
         df = pd.read_csv(sheet_url)
-        df.columns = ['Timestamp', 'Date', 'Cage Name', 'Animal Name', 'Fed By', 'Amount Fed', 'Excess Food']
+        # UPDATED: Added 'Animal ID' into the column structure
+        df.columns = ['Timestamp', 'Date', 'Cage Name', 'Animal ID', 'Animal Name', 'Fed By', 'Amount Fed', 'Excess Food']
         df['Date'] = pd.to_datetime(df['Date']).dt.date
         return df
     except Exception as e:
-        st.error("Cannot connect to Google Sheets. Please check the URL and ensure it is published to the web.")
+        st.error(f"Cannot connect to Google Sheets or column mismatch. Error details: {e}")
         return pd.DataFrame()
 
-# --- MAKE SURE TO PASTE YOUR CSV URL HERE AGAIN ---
+# --- PASTE YOUR CSV URL HERE ---
 SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ2lKl_VmCMxoITX40Gtfu5y90Xd2a-eWouVm4f0S4udVRDeK-4jk_QhEUzQR61zFew3Ee5gwM9UJw5/pub?gid=98942158&single=true&output=csv" 
 
 df = load_data(SHEET_URL)
@@ -134,7 +133,6 @@ if not df.empty:
     with col1:
         st.markdown("### 📅 Select Filter")
         unique_dates = sorted(df['Date'].dropna().unique(), reverse=True)
-        # Explicitly make date selection bright for dark mode
         selected_date = st.selectbox("Choose a Date:", unique_dates, help="Select a date to filter feeding records.")
     
     filtered_df = df[df['Date'] == selected_date]
@@ -152,9 +150,9 @@ if not df.empty:
     st.divider()
     st.markdown("### 📋 Detailed Feeding Log")
     
-    # 7. Display Data
+    # 7. Display Data (UPDATED: Added 'Animal ID' to the visible table)
     st.dataframe(
-        filtered_df[['Cage Name', 'Animal Name', 'Fed By', 'Amount Fed', 'Excess Food']],
+        filtered_df[['Cage Name', 'Animal ID', 'Animal Name', 'Fed By', 'Amount Fed', 'Excess Food']],
         use_container_width=True,
         hide_index=True
     )
