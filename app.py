@@ -3,13 +3,13 @@ import pandas as pd
 
 # 1. Page Configuration
 st.set_page_config(
-    page_title="Shelter Feeding Tracker",
+    page_title="Prayas Animal Tracker",
     page_icon="🐾",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
 
-# 2. Advanced CSS Styling (DARK THEME)
+# 2. Advanced CSS Styling (DARK THEME WITH IMAGE BACKGROUND)
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;800&display=swap');
@@ -93,8 +93,8 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# 3. App Headers
-st.markdown("<h1 class='main-header'>🐾 Animal Shelter Tracker</h1>", unsafe_allow_html=True)
+# 3. App Headers (UPDATED WITH BRANDING)
+st.markdown("<h1 class='main-header'>🐾 Prayas Animal Tracker</h1>", unsafe_allow_html=True)
 st.markdown("<p class='sub-header'>Daily monitoring of nutritional intake and excess</p>", unsafe_allow_html=True)
 
 # 4. Smart Load Data Function
@@ -110,15 +110,14 @@ def load_data(sheet_url):
             elif 'type' in lower_col or 'species' in lower_col: rename_dict[col] = 'Animal Type'
             elif 'cage' in lower_col: rename_dict[col] = 'Cage Name'
             elif 'id' in lower_col: rename_dict[col] = 'Animal ID'
-            elif 'name' in lower_col: rename_dict[col] = 'Animal Name'
             elif 'fed by' in lower_col or 'person' in lower_col: rename_dict[col] = 'Fed By'
             elif 'amount' in lower_col: rename_dict[col] = 'Amount Fed'
             elif 'excess' in lower_col: rename_dict[col] = 'Excess Food'
             
         df = df.rename(columns=rename_dict)
         
-        # Added 'Animal Type' to expected columns
-        expected_cols = ['Date', 'Animal Type', 'Cage Name', 'Animal ID', 'Animal Name', 'Fed By', 'Amount Fed', 'Excess Food']
+        # REMOVED: 'Animal Name' from expected columns tracking
+        expected_cols = ['Date', 'Animal Type', 'Cage Name', 'Animal ID', 'Fed By', 'Amount Fed', 'Excess Food']
         for c in expected_cols:
             if c not in df.columns:
                 df[c] = 'N/A'
@@ -130,14 +129,14 @@ def load_data(sheet_url):
         return pd.DataFrame()
 
 # --- PASTE YOUR CSV URL HERE ---
-SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ2lKl_VmCMxoITX40Gtfu5y90Xd2a-eWouVm4f0S4udVRDeK-4jk_QhEUzQR61zFew3Ee5gwM9UJw5/pub?gid=98942158&single=true&output=csv" 
+SHEET_URL = "YOUR_PUBLISHED_CSV_URL_HERE" 
 
 df = load_data(SHEET_URL)
 
 if not df.empty:
     st.write("<br>", unsafe_allow_html=True) 
     
-    # 5. Dashboard Controls (UPGRADED WITH DUAL FILTERS)
+    # 5. Dashboard Controls
     col1, col2 = st.columns([1, 3])
     
     with col1:
@@ -147,7 +146,7 @@ if not df.empty:
         unique_dates = sorted(df['Date'].dropna().unique(), reverse=True)
         selected_date = st.selectbox("📅 Date:", ["All Dates"] + list(unique_dates))
         
-        # Animal Type Filter (Your exact list of 24)
+        # Animal Type Filter
         animal_list = [
             "Dog", "Cat", "Monkey", "Cow", "Goat", "Buffalo", "Rabbit", "Iguanas", 
             "Turkey", "Duck", "Kannur", "Pigeon", "Peahon", "Alex Parrot", "Rose Parrot", 
@@ -161,17 +160,16 @@ if not df.empty:
             st.cache_data.clear()
             st.rerun()
     
-    # Apply filtering logic based on what the user selects
+    # Filtering logic
     filtered_df = df.copy()
     
     if selected_date != "All Dates":
         filtered_df = filtered_df[filtered_df['Date'] == selected_date]
         
     if selected_animal != "All Animals":
-        # Using string matching to make sure we catch it even if capitalization is slightly off in the form
         filtered_df = filtered_df[filtered_df['Animal Type'].str.contains(selected_animal, case=False, na=False)]
     
-    # 6. Calculate Metrics (NOW IN GRAMS)
+    # 6. Calculate Metrics (Grams)
     clean_fed = filtered_df['Amount Fed'].astype(str).str.replace(r'[^\d.]', '', regex=True)
     total_fed = pd.to_numeric(clean_fed, errors='coerce').sum()
     
@@ -181,16 +179,15 @@ if not df.empty:
     with col2:
         m1, m2, m3 = st.columns(3)
         m1.metric(label="Total Records", value=len(filtered_df))
-        # Formatted with commas for large gram amounts (e.g., 1,500.00 g)
         m2.metric(label="Total Food Fed", value=f"{total_fed:,.2f} g") 
         m3.metric(label="Total Excess", value=f"{total_excess:,.2f} g")
 
     st.divider()
     st.markdown("### 📋 Detailed Feeding Log")
     
-    # 7. Display Data (Added 'Animal Type' to the table view)
+    # 7. Display Data (REMOVED: 'Animal Name' from display selection array)
     st.dataframe(
-        filtered_df[['Date', 'Animal Type', 'Cage Name', 'Animal ID', 'Animal Name', 'Fed By', 'Amount Fed', 'Excess Food']],
+        filtered_df[['Date', 'Animal Type', 'Cage Name', 'Animal ID', 'Fed By', 'Amount Fed', 'Excess Food']],
         use_container_width=True,
         hide_index=True
     )
