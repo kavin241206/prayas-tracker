@@ -129,7 +129,7 @@ def load_data(sheet_url):
         return pd.DataFrame()
 
 # --- PASTE YOUR CSV URL HERE ---
-SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ2lKl_VmCMxoITX40Gtfu5y90Xd2a-eWouVm4f0S4udVRDeK-4jk_QhEUzQR61zFew3Ee5gwM9UJw5/pub?gid=98942158&single=true&output=csv" 
+SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRgU9bh-G20aidHyA6hSREsiecVz-_Eyxj43LcTC_OBf-nBhQQOuTbI3tIlpnYvjtOuj-NmvRsx9cO1/pub?gid=234615063&single=true&output=csv" 
 
 df = load_data(SHEET_URL)
 
