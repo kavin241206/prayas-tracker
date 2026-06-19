@@ -38,13 +38,13 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.markdown("<h1 class='main-header'>🐾 Prayas Animal Tracker</h1>", unsafe_allow_html=True)
-st.markdown("<p class='sub-header'>Operational Data Merging & Cost Verification Platform</p>", unsafe_allow_html=True)
+st.markdown("<p class='sub-header'>Daily monitoring of nutritional intake and excess</p>", unsafe_allow_html=True)
 
-# 4. Smart Multi-Data Pipeline Merger (Reinforced against KeyErrors)
+# 4. Smart Multi-Data Pipeline Merger
 @st.cache_data(ttl=30)
 def load_and_merge_data(feed_url, excess_url):
     try:
-        # Load Form 1 (Feeding)
+        # Load Form 1 (Feeding Log)
         df_feed = pd.read_csv(feed_url)
         rename_feed = {}
         for col in df_feed.columns:
@@ -58,7 +58,7 @@ def load_and_merge_data(feed_url, excess_url):
             elif 'fed by' in c_low or 'person' in c_low: rename_feed[col] = 'Fed By'
         df_feed = df_feed.rename(columns=rename_feed)
         
-        # Guard rails to inject default structures if mapping failed
+        # Safeguards for columns
         if 'Food Type' not in df_feed.columns: df_feed['Food Type'] = 'General Feed'
         if 'Animal ID' not in df_feed.columns: df_feed['Animal ID'] = 'N/A'
         if 'Amount Given' not in df_feed.columns: df_feed['Amount Given'] = 0
@@ -67,11 +67,11 @@ def load_and_merge_data(feed_url, excess_url):
         if 'Fed By' not in df_feed.columns: df_feed['Fed By'] = 'Staff'
 
         df_feed['Amount Given'] = pd.to_numeric(df_feed['Amount Given'].astype(str).str.replace(r'[^\d.]', '', regex=True), errors='coerce').fillna(0)
-        df_feed['Date'] = pd.to_datetime(df_feed.get('Date', pd.Timestamp.now()), errors='coerce').dt.date
+        df_feed['Date'] = pd.to_datetime(df_feed['Date'], errors='coerce').dt.date
         df_feed['Animal ID'] = df_feed['Animal ID'].astype(str).str.strip()
         df_feed['Food Type'] = df_feed['Food Type'].astype(str).str.strip().str.title()
 
-        # Load Form 2 (Excess)
+        # Load Form 2 (Excess Log)
         df_excess = pd.read_csv(excess_url)
         rename_ex = {}
         for col in df_excess.columns:
@@ -87,14 +87,14 @@ def load_and_merge_data(feed_url, excess_url):
         if 'Excess Food' not in df_excess.columns: df_excess['Excess Food'] = 0
 
         df_excess['Excess Food'] = pd.to_numeric(df_excess['Excess Food'].astype(str).str.replace(r'[^\d.]', '', regex=True), errors='coerce').fillna(0)
-        df_excess['Date'] = pd.to_datetime(df_excess.get('Date', pd.Timestamp.now()), errors='coerce').dt.date
+        df_excess['Date'] = pd.to_datetime(df_excess['Date'], errors='coerce').dt.date
         df_excess['Animal ID'] = df_excess['Animal ID'].astype(str).str.strip()
         df_excess['Food Type'] = df_excess['Food Type'].astype(str).str.strip().str.title()
 
-        # Group duplicate cleanups
+        # Group leftover logs to handle single matching keys cleanly
         df_excess_grouped = df_excess.groupby(['Date', 'Animal ID', 'Food Type'], as_index=False)['Excess Food'].sum()
 
-        # Execute Merge safely
+        # Safe Left Merge matching operations
         merged_df = pd.merge(df_feed, df_excess_grouped, on=['Date', 'Animal ID', 'Food Type'], how='left')
         merged_df['Excess Food'] = merged_df['Excess Food'].fillna(0)
         merged_df['Net Consumed'] = merged_df['Amount Given'] - merged_df['Excess Food']
@@ -104,7 +104,7 @@ def load_and_merge_data(feed_url, excess_url):
         st.error(f"Pipeline Execution Mismatch: {e}")
         return pd.DataFrame()
 
-# --- PASTE BOTH LINKS HERE ---
+# --- PASTE YOUR LINKS HERE ---
 FEEDING_FORM_CSV = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTEUNzMPPuzvwxGl6DZuHSOrdkpyi9JWWzj3cywT3V4zDqxEvRGdhmItuboqFkHLN1l1f39uSGTQMeP/pub?gid=1774010924&single=true&output=csv"
 EXCESS_FORM_CSV = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTEUNzMPPuzvwxGl6DZuHSOrdkpyi9JWWzj3cywT3V4zDqxEvRGdhmItuboqFkHLN1l1f39uSGTQMeP/pub?gid=556161144&single=true&output=csv"
 
@@ -119,6 +119,7 @@ if not df.empty:
         unique_dates = sorted(df['Date'].dropna().unique(), reverse=True)
         selected_date = st.selectbox("📅 Date:", ["All Dates"] + list(unique_dates))
         
+        # Segregation values list for your 24 items
         animal_list = ["Dog", "Cat", "Monkey", "Cow", "Goat", "Buffalo", "Rabbit", "Iguanas", "Turkey", "Duck", "Kannur", "Pigeon", "Peahon", "Alex Parrot", "Rose Parrot", "African Love Birds", "Buggies Birds", "African Greys", "Cockatiel Birds", "Guinea Pigs", "Hen", "Red Ear Slider", "Star Tortoise", "Snake"]
         selected_animal = st.selectbox("🐾 Animal Type:", ["All Animals"] + sorted(animal_list))
         
@@ -126,14 +127,14 @@ if not df.empty:
             st.cache_data.clear()
             st.rerun()
 
-    # Filtering Logic
+    # Filtering Operations
     filtered_df = df.copy()
     if selected_date != "All Dates":
         filtered_df = filtered_df[filtered_df['Date'] == selected_date]
     if selected_animal != "All Animals":
         filtered_df = filtered_df[filtered_df['Animal Type'].str.contains(selected_animal, case=False, na=False)]
 
-    # Dynamic Calculations
+    # Metrics Layout Engine (Grams)
     total_fed = filtered_df['Amount Given'].sum()
     total_excess = filtered_df['Excess Food'].sum()
     total_net = filtered_df['Net Consumed'].sum()
@@ -145,44 +146,24 @@ if not df.empty:
         m3.metric(label="Net Eaten by Animals", value=f"{total_net:,.1f} g")
 
     st.divider()
-    
-    # Financial Evaluation Matrix
-    st.markdown("### 💰 Owner's Food Cost Evaluation Matrix")
-    st.markdown("<p style='color: #BDC3C7;'>Type in the price per gram to compute immediate financial layout.</p>", unsafe_allow_html=True)
-    
-    unique_foods = df['Food Type'].dropna().unique()
-    
-    cost_dict = {}
-    if len(unique_foods) > 0:
-        cost_cols = st.columns(min(len(unique_foods), 4))
-        for idx, food_name in enumerate(unique_foods):
-            with cost_cols[idx % 4]:
-                cost_dict[food_name] = st.number_input(f"Price/g for {food_name}:", min_value=0.0, value=0.0, step=0.01, format="%.4f")
-    
-    summary_df = filtered_df.groupby('Food Type').agg(
-        Total_Given=('Amount Given', 'sum'),
-        Total_Excess=('Excess Food', 'sum'),
-        Net_Eaten=('Net Consumed', 'sum')
-    ).reset_index()
-    
-    summary_df['Unit Cost'] = summary_df['Food Type'].map(cost_dict).fillna(0.0)
-    summary_df['Total Valuation Cost'] = summary_df['Total_Given'] * summary_df['Unit Cost']
-    summary_df['Wasted Cost Value'] = summary_df['Total_Excess'] * summary_df['Unit Cost']
-    
-    st.dataframe(
-        summary_df.rename(columns={
-            'Total_Given': 'Total Given (g)', 'Total_Excess': 'Total Excess (g)', 
-            'Net_Eaten': 'Net Eaten (g)', 'Unit Cost': 'Rate / gram',
-            'Total Valuation Cost': 'Total Cost Spent', 'Wasted Cost Value': 'Financial Waste Value'
-        }),
-        use_container_width=True, hide_index=True
-    )
-
-    st.divider()
     st.markdown("### 📋 Unified Operational Registry Log")
+    
+    # CRITICAL FIX: Convert table content explicitly to text strings to completely bypass PyArrow serialization crashes
+    display_df = filtered_df[['Date', 'Animal Type', 'Cage Name', 'Animal ID', 'Food Type', 'Amount Given', 'Excess Food', 'Net Consumed', 'Fed By']].copy()
+    
+    display_df['Date'] = display_df['Date'].astype(str)
+    display_df['Amount Given'] = display_df['Amount Given'].map(lambda x: f"{x:,.1f} g")
+    display_df['Excess Food'] = display_df['Excess Food'].map(lambda x: f"{x:,.1f} g")
+    display_df['Net Consumed'] = display_df['Net Consumed'].map(lambda x: f"{x:,.1f} g")
+    
+    for col in ['Animal Type', 'Cage Name', 'Animal ID', 'Food Type', 'Fed By']:
+        display_df[col] = display_df[col].astype(str)
+
+    # Render Clean Table
     st.dataframe(
-        filtered_df[['Date', 'Animal Type', 'Cage Name', 'Animal ID', 'Food Type', 'Amount Given', 'Excess Food', 'Net Consumed', 'Fed By']],
-        use_container_width=True, hide_index=True
+        display_df,
+        use_container_width=True, 
+        hide_index=True
     )
 else:
     st.info("Awaiting initial system synchronization data stream...")
