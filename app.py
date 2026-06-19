@@ -29,7 +29,7 @@ st.markdown("""
     div[data-testid="metric-container"] div[data-testid="stMetricValue"] { color: #2ECC71 !important; }
     h3, p, label, h4 { color: #F8F9F9 !important; text-shadow: 1px 1px 3px rgba(0,0,0,0.5); }
     div[data-testid="stSelectbox"] label { color: #F8F9F9 !important; }
-    div[data-testid="stSelectbox"] div[data-baseweb="select"] {
+    div[data-baseweb="select"] {
         background-color: rgba(255, 255, 255, 0.1) !important; color: #F8F9F9 !important; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 8px;
     }
     div[data-testid="stDataFrame"] { border-radius: 10px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.7); background: rgba(0,0,0,0.5); }
@@ -40,7 +40,7 @@ st.markdown("""
 st.markdown("<h1 class='main-header'>🐾 Prayas Animal Tracker</h1>", unsafe_allow_html=True)
 st.markdown("<p class='sub-header'>Operational Data Merging & Cost Verification Platform</p>", unsafe_allow_html=True)
 
-# 4. Smart Multi-Data Pipeline Merger
+# 4. Smart Multi-Data Pipeline Merger (Reinforced against KeyErrors)
 @st.cache_data(ttl=30)
 def load_and_merge_data(feed_url, excess_url):
     try:
@@ -53,12 +53,21 @@ def load_and_merge_data(feed_url, excess_url):
             elif 'type' in c_low or 'species' in c_low: rename_feed[col] = 'Animal Type'
             elif 'cage' in c_low: rename_feed[col] = 'Cage Name'
             elif 'id' in c_low: rename_feed[col] = 'Animal ID'
-            elif 'food' in c_low: rename_feed[col] = 'Food Type'
+            elif 'food' in c_low or 'feed' in c_low or 'diet' in c_low or 'item' in c_low: rename_feed[col] = 'Food Type'
             elif 'amount' in c_low or 'given' in c_low: rename_feed[col] = 'Amount Given'
             elif 'fed by' in c_low or 'person' in c_low: rename_feed[col] = 'Fed By'
         df_feed = df_feed.rename(columns=rename_feed)
+        
+        # Guard rails to inject default structures if mapping failed
+        if 'Food Type' not in df_feed.columns: df_feed['Food Type'] = 'General Feed'
+        if 'Animal ID' not in df_feed.columns: df_feed['Animal ID'] = 'N/A'
+        if 'Amount Given' not in df_feed.columns: df_feed['Amount Given'] = 0
+        if 'Animal Type' not in df_feed.columns: df_feed['Animal Type'] = 'Dog'
+        if 'Cage Name' not in df_feed.columns: df_feed['Cage Name'] = 'General'
+        if 'Fed By' not in df_feed.columns: df_feed['Fed By'] = 'Staff'
+
         df_feed['Amount Given'] = pd.to_numeric(df_feed['Amount Given'].astype(str).str.replace(r'[^\d.]', '', regex=True), errors='coerce').fillna(0)
-        df_feed['Date'] = pd.to_datetime(df_feed['Date'], errors='coerce').dt.date
+        df_feed['Date'] = pd.to_datetime(df_feed.get('Date', pd.Timestamp.now()), errors='coerce').dt.date
         df_feed['Animal ID'] = df_feed['Animal ID'].astype(str).str.strip()
         df_feed['Food Type'] = df_feed['Food Type'].astype(str).str.strip().str.title()
 
@@ -69,18 +78,23 @@ def load_and_merge_data(feed_url, excess_url):
             c_low = col.lower()
             if 'date' in c_low: rename_ex[col] = 'Date'
             elif 'id' in c_low: rename_ex[col] = 'Animal ID'
-            elif 'food' in c_low: rename_ex[col] = 'Food Type'
+            elif 'food' in c_low or 'feed' in c_low or 'diet' in c_low or 'item' in c_low: rename_ex[col] = 'Food Type'
             elif 'leftover' in c_low or 'excess' in c_low: rename_ex[col] = 'Excess Food'
         df_excess = df_excess.rename(columns=rename_ex)
+        
+        if 'Food Type' not in df_excess.columns: df_excess['Food Type'] = 'General Feed'
+        if 'Animal ID' not in df_excess.columns: df_excess['Animal ID'] = 'N/A'
+        if 'Excess Food' not in df_excess.columns: df_excess['Excess Food'] = 0
+
         df_excess['Excess Food'] = pd.to_numeric(df_excess['Excess Food'].astype(str).str.replace(r'[^\d.]', '', regex=True), errors='coerce').fillna(0)
-        df_excess['Date'] = pd.to_datetime(df_excess['Date'], errors='coerce').dt.date
+        df_excess['Date'] = pd.to_datetime(df_excess.get('Date', pd.Timestamp.now()), errors='coerce').dt.date
         df_excess['Animal ID'] = df_excess['Animal ID'].astype(str).str.strip()
         df_excess['Food Type'] = df_excess['Food Type'].astype(str).str.strip().str.title()
 
-        # Group excess records just in case there are multiple cleanup entries
+        # Group duplicate cleanups
         df_excess_grouped = df_excess.groupby(['Date', 'Animal ID', 'Food Type'], as_index=False)['Excess Food'].sum()
 
-        # Merge datasets using composite keys (Left join maintains all feeding entries)
+        # Execute Merge safely
         merged_df = pd.merge(df_feed, df_excess_grouped, on=['Date', 'Animal ID', 'Food Type'], how='left')
         merged_df['Excess Food'] = merged_df['Excess Food'].fillna(0)
         merged_df['Net Consumed'] = merged_df['Amount Given'] - merged_df['Excess Food']
@@ -132,13 +146,12 @@ if not df.empty:
 
     st.divider()
     
-    # 7. Section for Owner: Financial Evaluation Matrix
+    # Financial Evaluation Matrix
     st.markdown("### 💰 Owner's Food Cost Evaluation Matrix")
-    st.markdown("<p style='color: #BDC3C7;'>Type in the price per gram (e.g., if a 1kg/1000g bag costs ₹200, price per gram is 0.20) to compute immediate financial layout.</p>", unsafe_allow_html=True)
+    st.markdown("<p style='color: #BDC3C7;'>Type in the price per gram to compute immediate financial layout.</p>", unsafe_allow_html=True)
     
     unique_foods = df['Food Type'].dropna().unique()
     
-    # Create an interactive grid for cost entry
     cost_dict = {}
     if len(unique_foods) > 0:
         cost_cols = st.columns(min(len(unique_foods), 4))
@@ -146,7 +159,6 @@ if not df.empty:
             with cost_cols[idx % 4]:
                 cost_dict[food_name] = st.number_input(f"Price/g for {food_name}:", min_value=0.0, value=0.0, step=0.01, format="%.4f")
     
-    # Build financial summary table grouped by Food Type
     summary_df = filtered_df.groupby('Food Type').agg(
         Total_Given=('Amount Given', 'sum'),
         Total_Excess=('Excess Food', 'sum'),
@@ -157,7 +169,6 @@ if not df.empty:
     summary_df['Total Valuation Cost'] = summary_df['Total_Given'] * summary_df['Unit Cost']
     summary_df['Wasted Cost Value'] = summary_df['Total_Excess'] * summary_df['Unit Cost']
     
-    # Format for visibility
     st.dataframe(
         summary_df.rename(columns={
             'Total_Given': 'Total Given (g)', 'Total_Excess': 'Total Excess (g)', 
