@@ -146,12 +146,11 @@ if not df.empty:
     with col1:
         st.markdown("### 🎛️ Filters")
         
-        # New: Month Filter Engine (Sorted Chronologically Reverse)
+        # Month Filter
         unique_periods = sorted(df['Month_Sort'].dropna().unique(), reverse=True)
         month_options = [p.strftime('%B %Y') for p in unique_periods]
         selected_month = st.selectbox("📅 Month:", ["All Months"] + month_options)
         
-        # Dynamically change available dates depending on the selected month
         if selected_month != "All Months":
             month_filtered_df = df[df['Month_Name'] == selected_month]
             unique_dates = sorted(month_filtered_df['Date'].dropna().unique(), reverse=True)
@@ -186,6 +185,30 @@ if not df.empty:
         m1.metric(label="Total Food Served", value=f"{total_fed:,.1f} g")
         m2.metric(label="Total Leftovers / Excess", value=f"{total_excess:,.1f} g")
         m3.metric(label="Net Eaten by Animals", value=f"{total_net:,.1f} g")
+
+    st.divider()
+    
+    # NEW FEATURE: Food Type Summary Tally Breakdown Table
+    st.markdown("### 🌾 Food Stock Consumption Summary")
+    
+    if not filtered_df.empty:
+        # Group and sum everything specifically by Food Type label
+        summary_df = filtered_df.groupby('Food Type').agg({
+            'Amount Given': 'sum',
+            'Excess Food': 'sum',
+            'Net Consumed': 'sum'
+        }).reset_index()
+        
+        # Format metrics to be display-safe strings with 'g'
+        display_summary = pd.DataFrame()
+        display_summary['Food Item Name'] = summary_df['Food Type'].astype(str)
+        display_summary['Total Served'] = summary_df['Amount Given'].map(lambda x: f"{float(x):,.1f} g")
+        display_summary['Total Excess / Leftover'] = summary_df['Excess Food'].map(lambda x: f"{float(x):,.1f} g")
+        display_summary['Net Weight Consumed'] = summary_df['Net Consumed'].map(lambda x: f"{float(x):,.1f} g")
+        
+        st.dataframe(display_summary, use_container_width=True, hide_index=True)
+    else:
+        st.info("No matching food distribution items found for selected filter criteria.")
 
     st.divider()
     st.markdown("### 📋 Unified Operational Registry Log")
