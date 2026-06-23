@@ -41,7 +41,7 @@ st.markdown("<h1 class='main-header'>🐾 Prayas Animal Tracker</h1>", unsafe_al
 st.markdown("<p class='sub-header'>Daily monitoring of nutritional intake and excess</p>", unsafe_allow_html=True)
 
 # 4. Smart Multi-Data Pipeline Merger
-@st.cache_data(ttl=30)
+@st.cache_data(ttl=10)
 def load_and_merge_data(feed_url, excess_url):
     try:
         # Load Form 1 (Feeding Log)
@@ -58,18 +58,15 @@ def load_and_merge_data(feed_url, excess_url):
             elif 'fed by' in c_low or 'person' in c_low: rename_feed[col] = 'Fed By'
         df_feed = df_feed.rename(columns=rename_feed)
         
-        # Safeguards for columns
-        if 'Food Type' not in df_feed.columns: df_feed['Food Type'] = 'General Feed'
-        if 'Animal ID' not in df_feed.columns: df_feed['Animal ID'] = 'N/A'
-        if 'Amount Given' not in df_feed.columns: df_feed['Amount Given'] = 0
-        if 'Animal Type' not in df_feed.columns: df_feed['Animal Type'] = 'Dog'
-        if 'Cage Name' not in df_feed.columns: df_feed['Cage Name'] = 'General'
-        if 'Fed By' not in df_feed.columns: df_feed['Fed By'] = 'Staff'
+        # Ensure fallback column keys exist safely
+        for c in ['Date', 'Animal Type', 'Cage Name', 'Animal ID', 'Food Type', 'Amount Given', 'Fed By']:
+            if c not in df_feed.columns: df_feed[c] = 'N/A'
 
         df_feed['Amount Given'] = pd.to_numeric(df_feed['Amount Given'].astype(str).str.replace(r'[^\d.]', '', regex=True), errors='coerce').fillna(0)
         df_feed['Date'] = pd.to_datetime(df_feed['Date'], errors='coerce').dt.date
         df_feed['Animal ID'] = df_feed['Animal ID'].astype(str).str.strip()
         df_feed['Food Type'] = df_feed['Food Type'].astype(str).str.strip().str.title()
+        df_feed['Animal Type'] = df_feed['Animal Type'].astype(str).str.strip()
 
         # Load Form 2 (Excess Log)
         df_excess = pd.read_csv(excess_url)
@@ -82,29 +79,26 @@ def load_and_merge_data(feed_url, excess_url):
             elif 'leftover' in c_low or 'excess' in c_low: rename_ex[col] = 'Excess Food'
         df_excess = df_excess.rename(columns=rename_ex)
         
-        if 'Food Type' not in df_excess.columns: df_excess['Food Type'] = 'General Feed'
-        if 'Animal ID' not in df_excess.columns: df_excess['Animal ID'] = 'N/A'
-        if 'Excess Food' not in df_excess.columns: df_excess['Excess Food'] = 0
+        for c in ['Date', 'Animal ID', 'Food Type', 'Excess Food']:
+            if c not in df_excess.columns: df_excess[c] = 0
 
         df_excess['Excess Food'] = pd.to_numeric(df_excess['Excess Food'].astype(str).str.replace(r'[^\d.]', '', regex=True), errors='coerce').fillna(0)
         df_excess['Date'] = pd.to_datetime(df_excess['Date'], errors='coerce').dt.date
         df_excess['Animal ID'] = df_excess['Animal ID'].astype(str).str.strip()
         df_excess['Food Type'] = df_excess['Food Type'].astype(str).str.strip().str.title()
 
-        # Group leftover logs to handle single matching keys cleanly
         df_excess_grouped = df_excess.groupby(['Date', 'Animal ID', 'Food Type'], as_index=False)['Excess Food'].sum()
 
-        # Safe Left Merge matching operations
         merged_df = pd.merge(df_feed, df_excess_grouped, on=['Date', 'Animal ID', 'Food Type'], how='left')
         merged_df['Excess Food'] = merged_df['Excess Food'].fillna(0)
         merged_df['Net Consumed'] = merged_df['Amount Given'] - merged_df['Excess Food']
         
         return merged_df
     except Exception as e:
-        st.error(f"Pipeline Execution Mismatch: {e}")
+        st.error(f"Pipeline Sync Mismatch: {e}")
         return pd.DataFrame()
 
-# --- PASTE YOUR LINKS HERE ---
+# --- PASTE BOTH LINKS HERE ---
 FEEDING_FORM_CSV = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTEUNzMPPuzvwxGl6DZuHSOrdkpyi9JWWzj3cywT3V4zDqxEvRGdhmItuboqFkHLN1l1f39uSGTQMeP/pub?gid=1774010924&single=true&output=csv"
 EXCESS_FORM_CSV = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTEUNzMPPuzvwxGl6DZuHSOrdkpyi9JWWzj3cywT3V4zDqxEvRGdhmItuboqFkHLN1l1f39uSGTQMeP/pub?gid=556161144&single=true&output=csv"
 
@@ -119,7 +113,6 @@ if not df.empty:
         unique_dates = sorted(df['Date'].dropna().unique(), reverse=True)
         selected_date = st.selectbox("📅 Date:", ["All Dates"] + list(unique_dates))
         
-        # Segregation values list for your 24 items
         animal_list = ["Dog", "Cat", "Monkey", "Cow", "Goat", "Buffalo", "Rabbit", "Iguanas", "Turkey", "Duck", "Kannur", "Pigeon", "Peahon", "Alex Parrot", "Rose Parrot", "African Love Birds", "Buggies Birds", "African Greys", "Cockatiel Birds", "Guinea Pigs", "Hen", "Red Ear Slider", "Star Tortoise", "Snake"]
         selected_animal = st.selectbox("🐾 Animal Type:", ["All Animals"] + sorted(animal_list))
         
@@ -127,14 +120,14 @@ if not df.empty:
             st.cache_data.clear()
             st.rerun()
 
-    # Filtering Operations
+    # Apply Filters
     filtered_df = df.copy()
     if selected_date != "All Dates":
         filtered_df = filtered_df[filtered_df['Date'] == selected_date]
     if selected_animal != "All Animals":
         filtered_df = filtered_df[filtered_df['Animal Type'].str.contains(selected_animal, case=False, na=False)]
 
-    # Metrics Layout Engine (Grams)
+    # Compute Metrics
     total_fed = filtered_df['Amount Given'].sum()
     total_excess = filtered_df['Excess Food'].sum()
     total_net = filtered_df['Net Consumed'].sum()
@@ -148,18 +141,19 @@ if not df.empty:
     st.divider()
     st.markdown("### 📋 Unified Operational Registry Log")
     
-    # CRITICAL FIX: Convert table content explicitly to text strings to completely bypass PyArrow serialization crashes
-    display_df = filtered_df[['Date', 'Animal Type', 'Cage Name', 'Animal ID', 'Food Type', 'Amount Given', 'Excess Food', 'Net Consumed', 'Fed By']].copy()
-    
-    display_df['Date'] = display_df['Date'].astype(str)
-    display_df['Amount Given'] = display_df['Amount Given'].map(lambda x: f"{x:,.1f} g")
-    display_df['Excess Food'] = display_df['Excess Food'].map(lambda x: f"{x:,.1f} g")
-    display_df['Net Consumed'] = display_df['Net Consumed'].map(lambda x: f"{x:,.1f} g")
-    
-    for col in ['Animal Type', 'Cage Name', 'Animal ID', 'Food Type', 'Fed By']:
-        display_df[col] = display_df[col].astype(str)
+    # Absolute Text-Safe Translation Layer to completely stop PyArrow crashes
+    display_df = pd.DataFrame()
+    display_df['Date'] = filtered_df['Date'].astype(str)
+    display_df['Animal Type'] = filtered_df['Animal Type'].astype(str)
+    display_df['Cage Name'] = filtered_df['Cage Name'].astype(str)
+    display_df['Animal ID'] = filtered_df['Animal ID'].astype(str)
+    display_df['Food Type'] = filtered_df['Food Type'].astype(str)
+    display_df['Amount Given'] = filtered_df['Amount Given'].map(lambda x: f"{float(x):,.1f} g")
+    display_df['Excess Food'] = filtered_df['Excess Food'].map(lambda x: f"{float(x):,.1f} g")
+    display_df['Net Consumed'] = filtered_df['Net Consumed'].map(lambda x: f"{float(x):,.1f} g")
+    display_df['Fed By'] = filtered_df['Fed By'].astype(str)
 
-    # Render Clean Table
+    # Render Final Table Securely
     st.dataframe(
         display_df,
         use_container_width=True, 
