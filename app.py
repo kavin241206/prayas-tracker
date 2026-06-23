@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import difflib
 
 # 1. Page Configuration
 st.set_page_config(
@@ -40,15 +41,13 @@ st.markdown("""
 st.markdown("<h1 class='main-header'>🐾 Prayas Animal Tracker</h1>", unsafe_allow_html=True)
 st.markdown("<p class='sub-header'>Daily monitoring of nutritional intake and excess</p>", unsafe_allow_html=True)
 
-# 4. Smart Multi-Data Pipeline Merger
+# 3. Dynamic Two-Form Pipeline Merger
 @st.cache_data(ttl=10)
 def load_and_merge_data(feed_url, excess_url):
     try:
-        # Load Form 1 (Feeding Log)
+        # --- LOAD FORM 1 (FEEDING LOG) ---
         df_feed = pd.read_csv(feed_url)
         rename_feed = {}
-        
-        # FIXED: Reordered priority checks so 'food' takes precedence over 'type'
         for col in df_feed.columns:
             c_low = col.lower()
             if 'date' in c_low: rename_feed[col] = 'Date'
@@ -58,22 +57,18 @@ def load_and_merge_data(feed_url, excess_url):
             elif 'cage' in c_low: rename_feed[col] = 'Cage Name'
             elif 'id' in c_low: rename_feed[col] = 'Animal ID'
             elif 'fed by' in c_low or 'person' in c_low: rename_feed[col] = 'Fed By'
-        
         df_feed = df_feed.rename(columns=rename_feed)
-        # Safety net: Drop duplicate columns if any matching errors occurred
         df_feed = df_feed.loc[:, ~df_feed.columns.duplicated()]
         
-        # Ensure fallback column keys exist safely
         for c in ['Date', 'Animal Type', 'Cage Name', 'Animal ID', 'Food Type', 'Amount Given', 'Fed By']:
             if c not in df_feed.columns: df_feed[c] = 'N/A'
 
         df_feed['Amount Given'] = pd.to_numeric(df_feed['Amount Given'].astype(str).str.replace(r'[^\d.]', '', regex=True), errors='coerce').fillna(0)
         df_feed['Date'] = pd.to_datetime(df_feed['Date'], errors='coerce').dt.date
         df_feed['Animal ID'] = df_feed['Animal ID'].astype(str).str.strip()
-        df_feed['Food Type'] = df_feed['Food Type'].astype(str).str.strip().str.title()
-        df_feed['Animal Type'] = df_feed['Animal Type'].astype(str).str.strip()
+        df_feed['Food Type'] = df_feed['Food Type'].astype(str).str.strip().str.lower() # store lower for flexible comparison
 
-        # Load Form 2 (Excess Log)
+        # --- LOAD FORM 2 (EXCESS LOG) ---
         df_excess = pd.read_csv(excess_url)
         rename_ex = {}
         for col in df_excess.columns:
@@ -82,7 +77,6 @@ def load_and_merge_data(feed_url, excess_url):
             elif 'id' in c_low: rename_ex[col] = 'Animal ID'
             elif 'food' in c_low or 'feed' in c_low or 'diet' in c_low or 'item' in c_low: rename_ex[col] = 'Food Type'
             elif 'leftover' in c_low or 'excess' in c_low: rename_ex[col] = 'Excess Food'
-        
         df_excess = df_excess.rename(columns=rename_ex)
         df_excess = df_excess.loc[:, ~df_excess.columns.duplicated()]
         
@@ -92,10 +86,42 @@ def load_and_merge_data(feed_url, excess_url):
         df_excess['Excess Food'] = pd.to_numeric(df_excess['Excess Food'].astype(str).str.replace(r'[^\d.]', '', regex=True), errors='coerce').fillna(0)
         df_excess['Date'] = pd.to_datetime(df_excess['Date'], errors='coerce').dt.date
         df_excess['Animal ID'] = df_excess['Animal ID'].astype(str).str.strip()
-        df_excess['Food Type'] = df_excess['Food Type'].astype(str).str.strip().str.title()
+        df_excess['Food Type'] = df_excess['Food Type'].astype(str).str.strip().str.lower()
 
+        # --- THE DYNAMIC TYPO-CORRECTION LOGIC ---
+        corrected_excess_foods = []
+        for idx, row in df_excess.iterrows():
+            ex_date = row['Date']
+            ex_id = row['Animal ID']
+            ex_food = row['Food Type']
+            
+            # Extract exactly what food labels were submitted for THIS ID on THIS DATE in Form 1
+            fed_food_options = df_feed[(df_feed['Date'] == ex_date) & (df_feed['Animal ID'] == ex_id)]['Food Type'].unique()
+            
+            if len(fed_food_options) == 0:
+                corrected_excess_foods.append(ex_food) # No entry found, leave as is
+            elif ex_food in fed_food_options:
+                corrected_excess_foods.append(ex_food) # Perfect match
+            else:
+                # Fuzzy match against only the specific foods fed to this animal today
+                closest_matches = difflib.get_close_matches(ex_food, fed_food_options, n=1, cutoff=0.1) # low cutoff handles bad typos like "wht"
+                if closest_matches:
+                    corrected_excess_foods.append(closest_matches[0])
+                else:
+                    # If fuzzy matching fails but the animal only received ONE item today, map to it automatically
+                    if len(fed_food_options) == 1:
+                        corrected_excess_foods.append(fed_food_options[0])
+                    else:
+                        corrected_excess_foods.append(fed_food_options[0]) # Default fallback
+                        
+        df_excess['Food Type'] = corrected_excess_foods
+        
+        # Clean up text casing for display (e.g., "wheat" -> "Wheat")
+        df_feed['Food Type'] = df_feed['Food Type'].str.title()
+        df_excess['Food Type'] = df_excess['Food Type'].str.title()
+
+        # Group and Merge
         df_excess_grouped = df_excess.groupby(['Date', 'Animal ID', 'Food Type'], as_index=False)['Excess Food'].sum()
-
         merged_df = pd.merge(df_feed, df_excess_grouped, on=['Date', 'Animal ID', 'Food Type'], how='left')
         merged_df['Excess Food'] = merged_df['Excess Food'].fillna(0)
         merged_df['Net Consumed'] = merged_df['Amount Given'] - merged_df['Excess Food']
@@ -106,8 +132,8 @@ def load_and_merge_data(feed_url, excess_url):
         return pd.DataFrame()
 
 # --- PASTE BOTH LINKS HERE ---
-FEEDING_FORM_CSV = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTEUNzMPPuzvwxGl6DZuHSOrdkpyi9JWWzj3cywT3V4zDqxEvRGdhmItuboqFkHLN1l1f39uSGTQMeP/pub?gid=1774010924&single=true&output=csv"
-EXCESS_FORM_CSV = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTEUNzMPPuzvwxGl6DZuHSOrdkpyi9JWWzj3cywT3V4zDqxEvRGdhmItuboqFkHLN1l1f39uSGTQMeP/pub?gid=556161144&single=true&output=csv"
+FEEDING_FORM_CSV = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSd6J0Vs0nD1sQ3VF0ksw-QFu8FbWS8uZG-UWpQOxZ5hJGhlpw-fQIPGTb-84utpl-r4QIXG5rKdUJb/pub?gid=771146835&single=true&output=csv"
+EXCESS_FORM_CSV = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSd6J0Vs0nD1sQ3VF0ksw-QFu8FbWS8uZG-UWpQOxZ5hJGhlpw-fQIPGTb-84utpl-r4QIXG5rKdUJb/pub?gid=1231320326&single=true&output=csv"
 
 df = load_and_merge_data(FEEDING_FORM_CSV, EXCESS_FORM_CSV)
 
@@ -120,7 +146,6 @@ if not df.empty:
         unique_dates = sorted(df['Date'].dropna().unique(), reverse=True)
         selected_date = st.selectbox("📅 Date:", ["All Dates"] + list(unique_dates))
         
-        # Segregation selection configuration
         animal_list = ["Dog", "Cat", "Monkey", "Cow", "Goat", "Buffalo", "Rabbit", "Iguanas", "Turkey", "Duck", "Kannur", "Pigeon", "Peahon", "Alex Parrot", "Rose Parrot", "African Love Birds", "Buggies Birds", "African Greys", "Cockatiel Birds", "Guinea Pigs", "Hen", "Red Ear Slider", "Star Tortoise", "Snake"]
         selected_animal = st.selectbox("🐾 Animal Type:", ["All Animals"] + sorted(animal_list))
         
@@ -149,7 +174,7 @@ if not df.empty:
     st.divider()
     st.markdown("### 📋 Unified Operational Registry Log")
     
-    # Text-Safe Translation Layer with try-except format configurations
+    # Text-Safe Translation Layer to completely stop formatting crashes
     display_df = pd.DataFrame()
     display_df['Date'] = filtered_df['Date'].astype(str)
     display_df['Animal Type'] = filtered_df['Animal Type'].astype(str)
@@ -168,7 +193,7 @@ if not df.empty:
     display_df['Net Consumed'] = filtered_df['Net Consumed'].map(format_val)
     display_df['Fed By'] = filtered_df['Fed By'].astype(str)
 
-    # Render Clean Table
+    # Render Table
     st.dataframe(
         display_df,
         use_container_width=True, 
