@@ -96,7 +96,6 @@ def load_and_merge_data(feed_url, excess_url):
             ex_id = row['Animal ID']
             ex_food = row['Food Type']
             
-            # Form 1 target criteria mapping
             fed_food_options = df_feed[(df_feed['Date'] == ex_date) & (df_feed['Animal ID'] == ex_id)]['Food Type'].unique()
             
             if len(fed_food_options) == 0:
@@ -104,7 +103,6 @@ def load_and_merge_data(feed_url, excess_url):
             elif ex_food in fed_food_options:
                 corrected_excess_foods.append(ex_food)
             else:
-                # Lenient text matching (handles variations like "wht" matching to "wheat")
                 closest_matches = difflib.get_close_matches(ex_food, fed_food_options, n=1, cutoff=0.1)
                 if closest_matches:
                     corrected_excess_foods.append(closest_matches[0])
@@ -139,10 +137,27 @@ df = load_and_merge_data(FEEDING_FORM_CSV, EXCESS_FORM_CSV)
 if not df.empty:
     st.write("<br>", unsafe_allow_html=True)
     
+    # Generate Month Tracking Columns Safely
+    dt_series = pd.to_datetime(df['Date'], errors='coerce')
+    df['Month_Sort'] = dt_series.dt.to_period('M')
+    df['Month_Name'] = dt_series.dt.strftime('%B %Y').fillna('Unknown Month')
+    
     col1, col2 = st.columns([1, 3])
     with col1:
         st.markdown("### 🎛️ Filters")
-        unique_dates = sorted(df['Date'].dropna().unique(), reverse=True)
+        
+        # New: Month Filter Engine (Sorted Chronologically Reverse)
+        unique_periods = sorted(df['Month_Sort'].dropna().unique(), reverse=True)
+        month_options = [p.strftime('%B %Y') for p in unique_periods]
+        selected_month = st.selectbox("📅 Month:", ["All Months"] + month_options)
+        
+        # Dynamically change available dates depending on the selected month
+        if selected_month != "All Months":
+            month_filtered_df = df[df['Month_Name'] == selected_month]
+            unique_dates = sorted(month_filtered_df['Date'].dropna().unique(), reverse=True)
+        else:
+            unique_dates = sorted(df['Date'].dropna().unique(), reverse=True)
+            
         selected_date = st.selectbox("📅 Date:", ["All Dates"] + list(unique_dates))
         
         animal_list = ["Dog", "Cat", "Monkey", "Cow", "Goat", "Buffalo", "Rabbit", "Iguanas", "Turkey", "Duck", "Kannur", "Pigeon", "Peahon", "Alex Parrot", "Rose Parrot", "African Love Birds", "Buggies Birds", "African Greys", "Cockatiel Birds", "Guinea Pigs", "Hen", "Red Ear Slider", "Star Tortoise", "Snake"]
@@ -152,12 +167,13 @@ if not df.empty:
             st.cache_data.clear()
             st.rerun()
 
-    # Apply Filters Safely (CRITICAL FIX ADDED HERE)
+    # Apply Multi-Tiered Filtering Logic
     filtered_df = df.copy()
+    if selected_month != "All Months":
+        filtered_df = filtered_df[filtered_df['Month_Name'] == selected_month]
     if selected_date != "All Dates":
         filtered_df = filtered_df[filtered_df['Date'] == selected_date]
     if selected_animal != "All Animals":
-        # Force the column to be read as a string object right here to kill the 'floating' error permanently
         filtered_df = filtered_df[filtered_df['Animal Type'].astype(str).str.contains(selected_animal, case=False, na=False)]
 
     # Compute Operational Metrics
@@ -174,7 +190,7 @@ if not df.empty:
     st.divider()
     st.markdown("### 📋 Unified Operational Registry Log")
     
-    # Text-Safe Conversion Layer for Stable Rendering
+    # Text-Safe Translation Layer for Stable Rendering
     display_df = pd.DataFrame()
     display_df['Date'] = filtered_df['Date'].astype(str)
     display_df['Animal Type'] = filtered_df['Animal Type'].astype(str)
