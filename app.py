@@ -66,7 +66,8 @@ def load_and_merge_data(feed_url, excess_url):
         df_feed['Amount Given'] = pd.to_numeric(df_feed['Amount Given'].astype(str).str.replace(r'[^\d.]', '', regex=True), errors='coerce').fillna(0)
         df_feed['Date'] = pd.to_datetime(df_feed['Date'], errors='coerce').dt.date
         df_feed['Animal ID'] = df_feed['Animal ID'].astype(str).str.strip()
-        df_feed['Food Type'] = df_feed['Food Type'].astype(str).str.strip().str.lower() # store lower for flexible comparison
+        df_feed['Food Type'] = df_feed['Food Type'].astype(str).str.strip().str.lower()
+        df_feed['Animal Type'] = df_feed['Animal Type'].astype(str).str.strip()
 
         # --- LOAD FORM 2 (EXCESS LOG) ---
         df_excess = pd.read_csv(excess_url)
@@ -95,30 +96,28 @@ def load_and_merge_data(feed_url, excess_url):
             ex_id = row['Animal ID']
             ex_food = row['Food Type']
             
-            # Extract exactly what food labels were submitted for THIS ID on THIS DATE in Form 1
+            # Form 1 target criteria mapping
             fed_food_options = df_feed[(df_feed['Date'] == ex_date) & (df_feed['Animal ID'] == ex_id)]['Food Type'].unique()
             
             if len(fed_food_options) == 0:
-                corrected_excess_foods.append(ex_food) # No entry found, leave as is
+                corrected_excess_foods.append(ex_food)
             elif ex_food in fed_food_options:
-                corrected_excess_foods.append(ex_food) # Perfect match
+                corrected_excess_foods.append(ex_food)
             else:
-                # Fuzzy match against only the specific foods fed to this animal today
-                closest_matches = difflib.get_close_matches(ex_food, fed_food_options, n=1, cutoff=0.1) # low cutoff handles bad typos like "wht"
+                # Lenient text matching (handles variations like "wht" matching to "wheat")
+                closest_matches = difflib.get_close_matches(ex_food, fed_food_options, n=1, cutoff=0.1)
                 if closest_matches:
                     corrected_excess_foods.append(closest_matches[0])
                 else:
-                    # If fuzzy matching fails but the animal only received ONE item today, map to it automatically
                     if len(fed_food_options) == 1:
                         corrected_excess_foods.append(fed_food_options[0])
                     else:
-                        corrected_excess_foods.append(fed_food_options[0]) # Default fallback
+                        corrected_excess_foods.append(fed_food_options[0])
                         
         df_excess['Food Type'] = corrected_excess_foods
         
-        # Clean up text casing for display (e.g., "wheat" -> "Wheat")
-        df_feed['Food Type'] = df_feed['Food Type'].str.title()
-        df_excess['Food Type'] = df_excess['Food Type'].str.title()
+        df_feed['Food Type'] = df_feed['Food Type'].astype(str).str.title()
+        df_excess['Food Type'] = df_excess['Food Type'].astype(str).str.title()
 
         # Group and Merge
         df_excess_grouped = df_excess.groupby(['Date', 'Animal ID', 'Food Type'], as_index=False)['Excess Food'].sum()
@@ -153,14 +152,15 @@ if not df.empty:
             st.cache_data.clear()
             st.rerun()
 
-    # Apply Filters
+    # Apply Filters Safely (CRITICAL FIX ADDED HERE)
     filtered_df = df.copy()
     if selected_date != "All Dates":
         filtered_df = filtered_df[filtered_df['Date'] == selected_date]
     if selected_animal != "All Animals":
-        filtered_df = filtered_df[filtered_df['Animal Type'].str.contains(selected_animal, case=False, na=False)]
+        # Force the column to be read as a string object right here to kill the 'floating' error permanently
+        filtered_df = filtered_df[filtered_df['Animal Type'].astype(str).str.contains(selected_animal, case=False, na=False)]
 
-    # Compute Metrics
+    # Compute Operational Metrics
     total_fed = filtered_df['Amount Given'].sum()
     total_excess = filtered_df['Excess Food'].sum()
     total_net = filtered_df['Net Consumed'].sum()
@@ -174,7 +174,7 @@ if not df.empty:
     st.divider()
     st.markdown("### 📋 Unified Operational Registry Log")
     
-    # Text-Safe Translation Layer to completely stop formatting crashes
+    # Text-Safe Conversion Layer for Stable Rendering
     display_df = pd.DataFrame()
     display_df['Date'] = filtered_df['Date'].astype(str)
     display_df['Animal Type'] = filtered_df['Animal Type'].astype(str)
@@ -193,7 +193,7 @@ if not df.empty:
     display_df['Net Consumed'] = filtered_df['Net Consumed'].map(format_val)
     display_df['Fed By'] = filtered_df['Fed By'].astype(str)
 
-    # Render Table
+    # Render Table Safely
     st.dataframe(
         display_df,
         use_container_width=True, 
