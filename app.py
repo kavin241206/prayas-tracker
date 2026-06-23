@@ -47,16 +47,21 @@ def load_and_merge_data(feed_url, excess_url):
         # Load Form 1 (Feeding Log)
         df_feed = pd.read_csv(feed_url)
         rename_feed = {}
+        
+        # FIXED: Reordered priority checks so 'food' takes precedence over 'type'
         for col in df_feed.columns:
             c_low = col.lower()
             if 'date' in c_low: rename_feed[col] = 'Date'
+            elif 'amount' in c_low or 'given' in c_low: rename_feed[col] = 'Amount Given'
+            elif 'food' in c_low or 'feed' in c_low or 'diet' in c_low or 'item' in c_low: rename_feed[col] = 'Food Type'
             elif 'type' in c_low or 'species' in c_low: rename_feed[col] = 'Animal Type'
             elif 'cage' in c_low: rename_feed[col] = 'Cage Name'
             elif 'id' in c_low: rename_feed[col] = 'Animal ID'
-            elif 'food' in c_low or 'feed' in c_low or 'diet' in c_low or 'item' in c_low: rename_feed[col] = 'Food Type'
-            elif 'amount' in c_low or 'given' in c_low: rename_feed[col] = 'Amount Given'
             elif 'fed by' in c_low or 'person' in c_low: rename_feed[col] = 'Fed By'
+        
         df_feed = df_feed.rename(columns=rename_feed)
+        # Safety net: Drop duplicate columns if any matching errors occurred
+        df_feed = df_feed.loc[:, ~df_feed.columns.duplicated()]
         
         # Ensure fallback column keys exist safely
         for c in ['Date', 'Animal Type', 'Cage Name', 'Animal ID', 'Food Type', 'Amount Given', 'Fed By']:
@@ -77,7 +82,9 @@ def load_and_merge_data(feed_url, excess_url):
             elif 'id' in c_low: rename_ex[col] = 'Animal ID'
             elif 'food' in c_low or 'feed' in c_low or 'diet' in c_low or 'item' in c_low: rename_ex[col] = 'Food Type'
             elif 'leftover' in c_low or 'excess' in c_low: rename_ex[col] = 'Excess Food'
+        
         df_excess = df_excess.rename(columns=rename_ex)
+        df_excess = df_excess.loc[:, ~df_excess.columns.duplicated()]
         
         for c in ['Date', 'Animal ID', 'Food Type', 'Excess Food']:
             if c not in df_excess.columns: df_excess[c] = 0
@@ -113,6 +120,7 @@ if not df.empty:
         unique_dates = sorted(df['Date'].dropna().unique(), reverse=True)
         selected_date = st.selectbox("📅 Date:", ["All Dates"] + list(unique_dates))
         
+        # Segregation selection configuration
         animal_list = ["Dog", "Cat", "Monkey", "Cow", "Goat", "Buffalo", "Rabbit", "Iguanas", "Turkey", "Duck", "Kannur", "Pigeon", "Peahon", "Alex Parrot", "Rose Parrot", "African Love Birds", "Buggies Birds", "African Greys", "Cockatiel Birds", "Guinea Pigs", "Hen", "Red Ear Slider", "Star Tortoise", "Snake"]
         selected_animal = st.selectbox("🐾 Animal Type:", ["All Animals"] + sorted(animal_list))
         
@@ -141,19 +149,26 @@ if not df.empty:
     st.divider()
     st.markdown("### 📋 Unified Operational Registry Log")
     
-    # Absolute Text-Safe Translation Layer to completely stop PyArrow crashes
+    # Text-Safe Translation Layer with try-except format configurations
     display_df = pd.DataFrame()
     display_df['Date'] = filtered_df['Date'].astype(str)
     display_df['Animal Type'] = filtered_df['Animal Type'].astype(str)
     display_df['Cage Name'] = filtered_df['Cage Name'].astype(str)
     display_df['Animal ID'] = filtered_df['Animal ID'].astype(str)
     display_df['Food Type'] = filtered_df['Food Type'].astype(str)
-    display_df['Amount Given'] = filtered_df['Amount Given'].map(lambda x: f"{float(x):,.1f} g")
-    display_df['Excess Food'] = filtered_df['Excess Food'].map(lambda x: f"{float(x):,.1f} g")
-    display_df['Net Consumed'] = filtered_df['Net Consumed'].map(lambda x: f"{float(x):,.1f} g")
+    
+    def format_val(val):
+        try:
+            return f"{float(val):,.1f} g"
+        except:
+            return "0.0 g"
+            
+    display_df['Amount Given'] = filtered_df['Amount Given'].map(format_val)
+    display_df['Excess Food'] = filtered_df['Excess Food'].map(format_val)
+    display_df['Net Consumed'] = filtered_df['Net Consumed'].map(format_val)
     display_df['Fed By'] = filtered_df['Fed By'].astype(str)
 
-    # Render Final Table Securely
+    # Render Clean Table
     st.dataframe(
         display_df,
         use_container_width=True, 
