@@ -49,7 +49,7 @@ def load_and_merge_data(feed_url, excess_url):
         df_feed = pd.read_csv(feed_url)
         rename_feed = {}
         for col in df_feed.columns:
-            c_low = col.lower()
+            c_low = str(col).lower() # Force string conversion here
             if 'date' in c_low: rename_feed[col] = 'Date'
             elif 'amount' in c_low or 'given' in c_low: rename_feed[col] = 'Amount Given'
             elif 'food' in c_low or 'feed' in c_low or 'diet' in c_low or 'item' in c_low: rename_feed[col] = 'Food Type'
@@ -71,7 +71,7 @@ def load_and_merge_data(feed_url, excess_url):
         df_excess = pd.read_csv(excess_url)
         rename_ex = {}
         for col in df_excess.columns:
-            c_low = col.lower()
+            c_low = str(col).lower() # Force string conversion here
             if 'date' in c_low: rename_ex[col] = 'Date'
             elif 'id' in c_low: rename_ex[col] = 'Animal ID'
             elif 'type' in c_low or 'species' in c_low: rename_ex[col] = 'Animal Type' 
@@ -96,8 +96,9 @@ def load_and_merge_data(feed_url, excess_url):
             df_excess[col] = df_excess[col].astype(str).str.strip().str.title()
             
             if col == 'Animal ID':
-                df_feed[col] = df_feed[col].apply(lambda x: 'Unknown' if x.lower() in null_aliases else x)
-                df_excess[col] = df_excess[col].apply(lambda x: 'Unknown' if x.lower() in null_aliases else x)
+                # Force string conversion before calling .lower()
+                df_feed[col] = df_feed[col].apply(lambda x: 'Unknown' if str(x).lower() in null_aliases else x)
+                df_excess[col] = df_excess[col].apply(lambda x: 'Unknown' if str(x).lower() in null_aliases else x)
 
         # --- DYNAMIC TYPO-CORRECTION & DATE/TYPE ANCHORING LOGIC ---
         corrected_excess_foods = []
@@ -107,7 +108,7 @@ def load_and_merge_data(feed_url, excess_url):
             ex_id = row['Animal ID']
             ex_food = row['Food Type']
             
-            # Step 1: Filter Feed Data strictly by Date and Animal Type (ignoring ID for a moment)
+            # Step 1: Filter Feed Data strictly by Date and Animal Type
             matching_feed = df_feed[(df_feed['Date'] == ex_date) & (df_feed['Animal Type'] == ex_type)]
             
             # Step 2: Recover Animal ID if it's 'Unknown' in the Excess Form
@@ -125,9 +126,9 @@ def load_and_merge_data(feed_url, excess_url):
             
             # Step 4: Correct Typos
             if len(fed_food_options) == 0:
-                corrected_excess_foods.append(ex_food) # No reference data, keep as is
+                corrected_excess_foods.append(ex_food) 
             elif ex_food in fed_food_options:
-                corrected_excess_foods.append(ex_food) # Exact match found
+                corrected_excess_foods.append(ex_food) 
             else:
                 closest_matches = difflib.get_close_matches(ex_food, fed_food_options, n=1, cutoff=0.1)
                 if closest_matches:
