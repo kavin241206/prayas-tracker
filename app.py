@@ -76,26 +76,42 @@ def load_and_merge_data(feed_url, excess_url):
             c_low = col.lower()
             if 'date' in c_low: rename_ex[col] = 'Date'
             elif 'id' in c_low: rename_ex[col] = 'Animal ID'
+            # Added catching for Animal Type in excess form
+            elif 'type' in c_low or 'species' in c_low: rename_ex[col] = 'Animal Type' 
             elif 'food' in c_low or 'feed' in c_low or 'diet' in c_low or 'item' in c_low: rename_ex[col] = 'Food Type'
             elif 'leftover' in c_low or 'excess' in c_low: rename_ex[col] = 'Excess Food'
         df_excess = df_excess.rename(columns=rename_ex)
         df_excess = df_excess.loc[:, ~df_excess.columns.duplicated()]
         
-        for c in ['Date', 'Animal ID', 'Food Type', 'Excess Food']:
+        # Added Animal Type to required fallback list
+        for c in ['Date', 'Animal ID', 'Animal Type', 'Food Type', 'Excess Food']:
             if c not in df_excess.columns: df_excess[c] = 0
 
         df_excess['Excess Food'] = pd.to_numeric(df_excess['Excess Food'].astype(str).str.replace(r'[^\d.]', '', regex=True), errors='coerce').fillna(0)
         df_excess['Date'] = pd.to_datetime(df_excess['Date'], errors='coerce').dt.date
         df_excess['Animal ID'] = df_excess['Animal ID'].astype(str).str.strip()
+        df_excess['Animal Type'] = df_excess['Animal Type'].astype(str).str.strip()
         df_excess['Food Type'] = df_excess['Food Type'].astype(str).str.strip().str.lower()
 
-        # --- THE DYNAMIC TYPO-CORRECTION LOGIC ---
+        # --- THE DYNAMIC TYPO-CORRECTION & MISSING ID LOGIC ---
         corrected_excess_foods = []
         for idx, row in df_excess.iterrows():
             ex_date = row['Date']
-            ex_id = row['Animal ID']
+            ex_id = str(row['Animal ID'])
+            ex_type = str(row['Animal Type'])
             ex_food = row['Food Type']
             
+            # 1. Recover missing Animal ID using Animal Type + Date
+            if not ex_id or ex_id.lower() in ['nan', 'none', 'n/a', 'null', '0']:
+                match_mask = (df_feed['Date'] == ex_date) & (df_feed['Animal Type'].str.lower() == ex_type.lower())
+                matching_feed = df_feed[match_mask]
+                
+                if not matching_feed.empty:
+                    # Auto-fill the missing Animal ID using the first matching animal of that type/date
+                    ex_id = str(matching_feed['Animal ID'].iloc[0]).strip()
+                    df_excess.at[idx, 'Animal ID'] = ex_id
+            
+            # 2. Correct Typos in Food Type
             fed_food_options = df_feed[(df_feed['Date'] == ex_date) & (df_feed['Animal ID'] == ex_id)]['Food Type'].unique()
             
             if len(fed_food_options) == 0:
@@ -188,7 +204,7 @@ if not df.empty:
 
     st.divider()
     
-    # NEW FEATURE: Food Type Summary Tally Breakdown Table
+    # Food Type Summary Tally Breakdown Table
     st.markdown("### 🌾 Food Stock Consumption Summary")
     
     if not filtered_df.empty:
