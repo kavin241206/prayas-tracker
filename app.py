@@ -41,11 +41,11 @@ st.markdown("""
 st.markdown("<h1 class='main-header'>🐾 Prayas Animal Tracker</h1>", unsafe_allow_html=True)
 st.markdown("<p class='sub-header'>Daily monitoring of nutritional intake and excess</p>", unsafe_allow_html=True)
 
-# 3. Intelligent Data Mapping Engine
+# 3. Dynamic Two-Form Pipeline Merger (CONCAT & SQUASH METHOD)
 @st.cache_data(ttl=10)
 def load_and_merge_data(feed_url, excess_url):
     try:
-        # --- 1. LOAD FEEDING LOG ---
+        # --- 1. LOAD & CLEAN FEEDING LOG ---
         df_feed = pd.read_csv(feed_url)
         rename_feed = {}
         for col in df_feed.columns:
@@ -65,18 +65,9 @@ def load_and_merge_data(feed_url, excess_url):
 
         df_feed['Amount Given'] = pd.to_numeric(df_feed['Amount Given'].astype(str).str.replace(r'[^\d.]', '', regex=True), errors='coerce').fillna(0)
         df_feed['Date'] = pd.to_datetime(df_feed['Date'], errors='coerce').dt.date.astype(str)
-        
-        # Clean text columns
-        null_aliases = ['nan', 'none', 'n/a', '', '0', 'unknown', 'null']
-        for col in ['Animal ID', 'Animal Type', 'Food Type', 'Cage Name']:
-            df_feed[col] = df_feed[col].astype(str).str.strip().str.title()
-            if col == 'Animal ID':
-                df_feed[col] = df_feed[col].apply(lambda x: 'Unknown' if str(x).lower() in null_aliases else x)
+        df_feed['Excess Food'] = 0.0  # Prepare for combination
 
-        # Initialize Excess and Net columns directly in the Feed DataFrame
-        df_feed['Excess Food'] = 0.0
-
-        # --- 2. LOAD EXCESS LOG ---
+        # --- 2. LOAD & CLEAN EXCESS LOG ---
         df_excess = pd.read_csv(excess_url)
         rename_ex = {}
         for col in df_excess.columns:
@@ -94,70 +85,65 @@ def load_and_merge_data(feed_url, excess_url):
 
         df_excess['Excess Food'] = pd.to_numeric(df_excess['Excess Food'].astype(str).str.replace(r'[^\d.]', '', regex=True), errors='coerce').fillna(0)
         df_excess['Date'] = pd.to_datetime(df_excess['Date'], errors='coerce').dt.date.astype(str)
-
-        # --- 3. SMART MATCHING ALGORITHM ---
-        # Instead of a strict database merge, we look at the excess log row-by-row
-        # and intelligently inject it into the correct feed row.
         
-        for idx, ex_row in df_excess.iterrows():
-            date = ex_row['Date']
-            ex_id = str(ex_row['Animal ID']).strip().title()
-            ex_type = str(ex_row['Animal Type']).strip().title()
-            ex_food = str(ex_row['Food Type']).strip().title()
-            amt = float(ex_row['Excess Food'])
+        # Prepare for combination (Give them empty feed columns)
+        df_excess['Amount Given'] = 0.0
+        df_excess['Cage Name'] = 'Unknown'
+        df_excess['Fed By'] = 'Unknown'
+
+        # --- 3. STANDARDIZE ALL TEXT (Fixes mismatches) ---
+        null_aliases = ['nan', 'none', 'n/a', '', '0', 'unknown']
+        for df_temp in [df_feed, df_excess]:
+            for col in ['Animal ID', 'Animal Type', 'Food Type', 'Cage Name', 'Fed By']:
+                df_temp[col] = df_temp[col].astype(str).str.strip().str.title()
+                if col == 'Animal ID':
+                    df_temp[col] = df_temp[col].apply(lambda x: 'Unknown' if str(x).lower() in null_aliases else x)
+
+        # --- 4. ALIGNMENT LOOP (Forces Excess rows to perfectly match Feed rows) ---
+        for idx, row in df_excess.iterrows():
+            date = row['Date']
+            a_type = row['Animal Type']
+            ex_food = row['Food Type']
             
-            if amt <= 0: continue
+            # Find matching feed entries for this specific date and animal type
+            feed_matches = df_feed[(df_feed['Date'] == date) & (df_feed['Animal Type'] == a_type)]
             
-            # Isolate feed data for this exact date
-            daily_feed = df_feed[df_feed['Date'] == date]
-            if daily_feed.empty: continue
-            
-            match_index = None
-            
-            # Strategy A: Try matching by Animal ID (Strongest Match)
-            if ex_id.lower() not in null_aliases:
-                id_matches = daily_feed[daily_feed['Animal ID'] == ex_id]
-                if not id_matches.empty:
-                    # If they fed multiple things to this animal, guess the closest food
-                    if len(id_matches) > 1:
-                        possible_foods = id_matches['Food Type'].tolist()
-                        search_string = f"{ex_food} {ex_type}" # Combine in case they mixed up the form inputs
-                        closest = difflib.get_close_matches(search_string, possible_foods, n=1, cutoff=0.1)
-                        if closest:
-                            match_index = id_matches[id_matches['Food Type'] == closest[0]].index[0]
-                        else:
-                            match_index = id_matches.index[0]
-                    else:
-                        match_index = id_matches.index[0]
-            
-            # Strategy B: If ID is missing, try matching by Animal Type AND fuzzy matching the food
-            if match_index is None:
-                type_matches = daily_feed[daily_feed['Animal Type'] == ex_type]
-                if not type_matches.empty:
-                    match_index = type_matches.index[0] # Grab first one of this type
-            
-            # Strategy C: If they put the Food Type into the Animal Type box (like "Pedigr")
-            if match_index is None:
-                possible_foods = daily_feed['Food Type'].tolist()
-                search_string = f"{ex_food} {ex_type}"
-                closest = difflib.get_close_matches(search_string, possible_foods, n=1, cutoff=0.1)
+            if not feed_matches.empty:
+                # 1. Borrow the ID
+                df_excess.at[idx, 'Animal ID'] = feed_matches['Animal ID'].iloc[0]
+                
+                # 2. Borrow the Metadata (Crucial for squashing later)
+                df_excess.at[idx, 'Cage Name'] = feed_matches['Cage Name'].iloc[0]
+                df_excess.at[idx, 'Fed By'] = feed_matches['Fed By'].iloc[0]
+                
+                # 3. Correct the Food Type Typo
+                possible_foods = feed_matches['Food Type'].unique().tolist()
+                closest = difflib.get_close_matches(ex_food, possible_foods, n=1, cutoff=0.1)
                 if closest:
-                    match_index = daily_feed[daily_feed['Food Type'] == closest[0]].index[0]
-                    
-            # Inject the excess data into the found row
-            if match_index is not None:
-                df_feed.at[match_index, 'Excess Food'] += amt
+                    df_excess.at[idx, 'Food Type'] = closest[0]
+                else:
+                    df_excess.at[idx, 'Food Type'] = possible_foods[0] # Force match if typo is extreme
 
-        # --- 4. FINALIZE CALCULATIONS ---
-        # Net Consumed is clean because we never created new rows
-        df_feed['Net Consumed'] = df_feed['Amount Given'] - df_feed['Excess Food']
+        # --- 5. STACK AND SQUASH ---
+        # Stack both dataframes on top of each other
+        combined_df = pd.concat([df_feed, df_excess], ignore_index=True)
         
-        return df_feed
+        # Group by all the metadata columns and sum the numbers together
+        final_df = combined_df.groupby(
+            ['Date', 'Animal Type', 'Cage Name', 'Animal ID', 'Food Type', 'Fed By'], 
+            as_index=False
+        ).agg({
+            'Amount Given': 'sum',
+            'Excess Food': 'sum'
+        })
 
+        # --- 6. CALCULATE TRUE NET ---
+        final_df['Net Consumed'] = final_df['Amount Given'] - final_df['Excess Food']
+        
+        return final_df
     except Exception as e:
-        st.error(f"Data Processing Error: {e}")
+        st.error(f"Pipeline Sync Mismatch: {e}")
         return pd.DataFrame()
-
 
 # --- PASTE BOTH LINKS HERE ---
 FEEDING_FORM_CSV = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSd6J0Vs0nD1sQ3VF0ksw-QFu8FbWS8uZG-UWpQOxZ5hJGhlpw-fQIPGTb-84utpl-r4QIXG5rKdUJb/pub?gid=771146835&single=true&output=csv"
@@ -259,6 +245,9 @@ if not df.empty:
     display_df['Excess Food'] = filtered_df['Excess Food'].map(format_val)
     display_df['Net Consumed'] = filtered_df['Net Consumed'].map(format_val)
     display_df['Fed By'] = filtered_df['Fed By'].astype(str)
+
+    # Sort the table logically by Date (descending) and Animal Type
+    display_df = display_df.sort_values(by=['Date', 'Animal Type'], ascending=[False, True])
 
     st.dataframe(
         display_df,
