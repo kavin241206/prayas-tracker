@@ -49,7 +49,7 @@ def load_and_merge_data(feed_url, excess_url):
         df_feed = pd.read_csv(feed_url)
         rename_feed = {}
         for col in df_feed.columns:
-            c_low = str(col).lower() # Force string conversion here
+            c_low = str(col).lower()
             if 'date' in c_low: rename_feed[col] = 'Date'
             elif 'amount' in c_low or 'given' in c_low: rename_feed[col] = 'Amount Given'
             elif 'food' in c_low or 'feed' in c_low or 'diet' in c_low or 'item' in c_low: rename_feed[col] = 'Food Type'
@@ -65,18 +65,18 @@ def load_and_merge_data(feed_url, excess_url):
 
         # Safely parse numeric and date values
         df_feed['Amount Given'] = pd.to_numeric(df_feed['Amount Given'].astype(str).str.replace(r'[^\d.]', '', regex=True), errors='coerce').fillna(0)
-        df_feed['Date'] = pd.to_datetime(df_feed['Date'], errors='coerce').dt.date
+        df_feed['Date'] = pd.to_datetime(df_feed['Date'], errors='coerce').dt.date.astype(str) # Force to string for bulletproof merging
         
         # --- LOAD FORM 2 (EXCESS LOG) ---
         df_excess = pd.read_csv(excess_url)
         rename_ex = {}
         for col in df_excess.columns:
-            c_low = str(col).lower() # Force string conversion here
+            c_low = str(col).lower()
             if 'date' in c_low: rename_ex[col] = 'Date'
             elif 'id' in c_low: rename_ex[col] = 'Animal ID'
             elif 'type' in c_low or 'species' in c_low: rename_ex[col] = 'Animal Type' 
             elif 'food' in c_low or 'feed' in c_low or 'diet' in c_low or 'item' in c_low: rename_ex[col] = 'Food Type'
-            elif 'leftover' in c_low or 'excess' in c_low: rename_ex[col] = 'Excess Food'
+            elif 'leftover' in c_low or 'excess' in c_low or 'waste' in c_low: rename_ex[col] = 'Excess Food'
         df_excess = df_excess.rename(columns=rename_ex)
         df_excess = df_excess.loc[:, ~df_excess.columns.duplicated()]
         
@@ -85,10 +85,9 @@ def load_and_merge_data(feed_url, excess_url):
 
         # Safely parse numeric and date values
         df_excess['Excess Food'] = pd.to_numeric(df_excess['Excess Food'].astype(str).str.replace(r'[^\d.]', '', regex=True), errors='coerce').fillna(0)
-        df_excess['Date'] = pd.to_datetime(df_excess['Date'], errors='coerce').dt.date
+        df_excess['Date'] = pd.to_datetime(df_excess['Date'], errors='coerce').dt.date.astype(str) # Force to string
 
         # --- STANDARDIZE STRINGS FOR ROBUST MATCHING ---
-        # Normalize missing or weird ID inputs into a clean 'Unknown' state
         null_aliases = ['nan', 'none', 'n/a', '', '0', 'unknown']
         
         for col in ['Animal ID', 'Animal Type', 'Food Type']:
@@ -96,7 +95,6 @@ def load_and_merge_data(feed_url, excess_url):
             df_excess[col] = df_excess[col].astype(str).str.strip().str.title()
             
             if col == 'Animal ID':
-                # Force string conversion before calling .lower()
                 df_feed[col] = df_feed[col].apply(lambda x: 'Unknown' if str(x).lower() in null_aliases else x)
                 df_excess[col] = df_excess[col].apply(lambda x: 'Unknown' if str(x).lower() in null_aliases else x)
 
@@ -108,23 +106,22 @@ def load_and_merge_data(feed_url, excess_url):
             ex_id = row['Animal ID']
             ex_food = row['Food Type']
             
-            # Step 1: Filter Feed Data strictly by Date and Animal Type
+            # Filter Feed Data strictly by Date and Animal Type
             matching_feed = df_feed[(df_feed['Date'] == ex_date) & (df_feed['Animal Type'] == ex_type)]
             
-            # Step 2: Recover Animal ID if it's 'Unknown' in the Excess Form
+            # Recover Animal ID if it's 'Unknown' in the Excess Form
             if ex_id == 'Unknown' and not matching_feed.empty:
-                # Borrow the ID from the first matching animal of this type fed on this date
                 ex_id = matching_feed['Animal ID'].iloc[0]
                 df_excess.at[idx, 'Animal ID'] = ex_id
             
-            # Step 3: Extract Valid Foods for this specific Animal
+            # Extract Valid Foods for this specific Animal
             fed_food_options = matching_feed[matching_feed['Animal ID'] == ex_id]['Food Type'].unique()
             
             # Fallback: If no exact match on ID, pull all foods given to that Animal Type on that date
             if len(fed_food_options) == 0:
                 fed_food_options = matching_feed['Food Type'].unique()
             
-            # Step 4: Correct Typos
+            # Correct Typos
             if len(fed_food_options) == 0:
                 corrected_excess_foods.append(ex_food) 
             elif ex_food in fed_food_options:
@@ -141,12 +138,16 @@ def load_and_merge_data(feed_url, excess_url):
         # Group Excess Data using all core parameters to avoid duplication when merging
         df_excess_grouped = df_excess.groupby(['Date', 'Animal Type', 'Animal ID', 'Food Type'], as_index=False)['Excess Food'].sum()
         
-        # Merge exactly on Date, Animal Type, Animal ID, and Food Type
-        merged_df = pd.merge(df_feed, df_excess_grouped, on=['Date', 'Animal Type', 'Animal ID', 'Food Type'], how='left')
+        # --- THE FIX: OUTER MERGE ---
+        # Outer merge guarantees that if an excess row fails to match a feed row, it STILL prints on screen.
+        merged_df = pd.merge(df_feed, df_excess_grouped, on=['Date', 'Animal Type', 'Animal ID', 'Food Type'], how='outer')
         
-        # Calculate Final Net Weight
+        # Fill missing values created by the outer merge
+        merged_df['Amount Given'] = merged_df['Amount Given'].fillna(0)
         merged_df['Excess Food'] = merged_df['Excess Food'].fillna(0)
         merged_df['Net Consumed'] = merged_df['Amount Given'] - merged_df['Excess Food']
+        merged_df['Fed By'] = merged_df['Fed By'].fillna('Unknown/Unmatched')
+        merged_df['Cage Name'] = merged_df['Cage Name'].fillna('Unknown/Unmatched')
         
         return merged_df
     except Exception as e:
