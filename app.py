@@ -61,11 +61,11 @@ def load_and_merge_data(feed_url, excess_url):
         df_feed = df_feed.loc[:, ~df_feed.columns.duplicated()]
         
         for c in ['Date', 'Animal Type', 'Cage Name', 'Animal ID', 'Food Type', 'Amount Given', 'Fed By']:
-            if c not in df_feed.columns: df_feed[c] = 'Unknown'
+            if c not in df_feed.columns: df_feed[c] = ''
 
         df_feed['Amount Given'] = pd.to_numeric(df_feed['Amount Given'].astype(str).str.replace(r'[^\d.]', '', regex=True), errors='coerce').fillna(0)
         df_feed['Date'] = pd.to_datetime(df_feed['Date'], errors='coerce').dt.date.astype(str)
-        df_feed['Excess Food'] = 0.0  # Prepare for combination
+        df_feed['Excess Food'] = 0.0  
 
         # --- 2. LOAD & CLEAN EXCESS LOG ---
         df_excess = pd.read_csv(excess_url)
@@ -81,56 +81,66 @@ def load_and_merge_data(feed_url, excess_url):
         df_excess = df_excess.loc[:, ~df_excess.columns.duplicated()]
         
         for c in ['Date', 'Animal ID', 'Animal Type', 'Food Type', 'Excess Food']:
-            if c not in df_excess.columns: df_excess[c] = 'Unknown'
+            if c not in df_excess.columns: df_excess[c] = ''
 
         df_excess['Excess Food'] = pd.to_numeric(df_excess['Excess Food'].astype(str).str.replace(r'[^\d.]', '', regex=True), errors='coerce').fillna(0)
         df_excess['Date'] = pd.to_datetime(df_excess['Date'], errors='coerce').dt.date.astype(str)
         
-        # Prepare for combination (Give them empty feed columns)
         df_excess['Amount Given'] = 0.0
-        df_excess['Cage Name'] = 'Unknown'
-        df_excess['Fed By'] = 'Unknown'
+        df_excess['Cage Name'] = ''
+        df_excess['Fed By'] = ''
 
-        # --- 3. STANDARDIZE ALL TEXT (Fixes mismatches) ---
+        # --- 3. STANDARDIZE ALL TEXT (REMOVE "UNKNOWN") ---
         null_aliases = ['nan', 'none', 'n/a', '', '0', 'unknown']
         for df_temp in [df_feed, df_excess]:
             for col in ['Animal ID', 'Animal Type', 'Food Type', 'Cage Name', 'Fed By']:
                 df_temp[col] = df_temp[col].astype(str).str.strip().str.title()
-                if col == 'Animal ID':
-                    df_temp[col] = df_temp[col].apply(lambda x: 'Unknown' if str(x).lower() in null_aliases else x)
+                df_temp[col] = df_temp[col].apply(lambda x: '' if str(x).lower() in null_aliases else x)
 
-        # --- 4. ALIGNMENT LOOP (Forces Excess rows to perfectly match Feed rows) ---
-        for idx, row in df_excess.iterrows():
-            date = row['Date']
-            a_type = row['Animal Type']
-            ex_food = row['Food Type']
+        # --- 4. AGGRESSIVE ALIGNMENT LOOP (Forces Excess rows to perfectly match Feed rows) ---
+        for idx, ex_row in df_excess.iterrows():
+            date = ex_row['Date']
+            ex_id = str(ex_row['Animal ID'])
+            ex_type = str(ex_row['Animal Type'])
+            ex_food = str(ex_row['Food Type'])
             
-            # Find matching feed entries for this specific date and animal type
-            feed_matches = df_feed[(df_feed['Date'] == date) & (df_feed['Animal Type'] == a_type)]
+            feed_matches = df_feed[df_feed['Date'] == date]
             
             if not feed_matches.empty:
-                # 1. Borrow the ID
-                df_excess.at[idx, 'Animal ID'] = feed_matches['Animal ID'].iloc[0]
+                best_match_idx = None
                 
-                # 2. Borrow the Metadata (Crucial for squashing later)
-                df_excess.at[idx, 'Cage Name'] = feed_matches['Cage Name'].iloc[0]
-                df_excess.at[idx, 'Fed By'] = feed_matches['Fed By'].iloc[0]
+                # Strategy A: Match by ID first
+                if ex_id != '':
+                    id_matches = feed_matches[feed_matches['Animal ID'] == ex_id]
+                    if not id_matches.empty:
+                        best_match_idx = id_matches.index[0]
                 
-                # 3. Correct the Food Type Typo
-                possible_foods = feed_matches['Food Type'].unique().tolist()
-                closest = difflib.get_close_matches(ex_food, possible_foods, n=1, cutoff=0.1)
-                if closest:
-                    df_excess.at[idx, 'Food Type'] = closest[0]
-                else:
-                    df_excess.at[idx, 'Food Type'] = possible_foods[0] # Force match if typo is extreme
+                # Strategy B: If no ID, fuzzy match ALL text (fixes "Pedig" typed into Animal Type)
+                if best_match_idx is None:
+                    search_str = f"{ex_type} {ex_food}".strip()
+                    feed_strs = feed_matches['Animal Type'] + " " + feed_matches['Food Type']
+                    closest = difflib.get_close_matches(search_str, feed_strs.tolist(), n=1, cutoff=0.1)
+                    
+                    if closest:
+                        best_match_idx = feed_matches[feed_strs == closest[0]].index[0]
+                    else:
+                        best_match_idx = feed_matches.index[0] # Fallback to prevent orphaned rows
+                        
+                # Overwrite the broken excess data with perfect feed data
+                if best_match_idx is not None:
+                    target = df_feed.loc[best_match_idx]
+                    df_excess.at[idx, 'Animal Type'] = target['Animal Type']
+                    df_excess.at[idx, 'Cage Name'] = target['Cage Name']
+                    df_excess.at[idx, 'Animal ID'] = target['Animal ID']
+                    df_excess.at[idx, 'Food Type'] = target['Food Type']
+                    df_excess.at[idx, 'Fed By'] = target['Fed By']
 
         # --- 5. STACK AND SQUASH ---
-        # Stack both dataframes on top of each other
         combined_df = pd.concat([df_feed, df_excess], ignore_index=True)
         
-        # Group by all the metadata columns and sum the numbers together
         final_df = combined_df.groupby(
             ['Date', 'Animal Type', 'Cage Name', 'Animal ID', 'Food Type', 'Fed By'], 
+            dropna=False, # Allows grouping by empty strings
             as_index=False
         ).agg({
             'Amount Given': 'sum',
@@ -154,16 +164,14 @@ df = load_and_merge_data(FEEDING_FORM_CSV, EXCESS_FORM_CSV)
 if not df.empty:
     st.write("<br>", unsafe_allow_html=True)
     
-    # Generate Month Tracking Columns Safely
     dt_series = pd.to_datetime(df['Date'], errors='coerce')
     df['Month_Sort'] = dt_series.dt.to_period('M')
-    df['Month_Name'] = dt_series.dt.strftime('%B %Y').fillna('Unknown Month')
+    df['Month_Name'] = dt_series.dt.strftime('%B %Y').fillna('')
     
     col1, col2 = st.columns([1, 3])
     with col1:
         st.markdown("### 🎛️ Filters")
         
-        # Month Filter
         unique_periods = sorted(df['Month_Sort'].dropna().unique(), reverse=True)
         month_options = [p.strftime('%B %Y') for p in unique_periods]
         selected_month = st.selectbox("📅 Month:", ["All Months"] + month_options)
@@ -183,7 +191,6 @@ if not df.empty:
             st.cache_data.clear()
             st.rerun()
 
-    # Apply Multi-Tiered Filtering Logic
     filtered_df = df.copy()
     if selected_month != "All Months":
         filtered_df = filtered_df[filtered_df['Month_Name'] == selected_month]
@@ -192,7 +199,6 @@ if not df.empty:
     if selected_animal != "All Animals":
         filtered_df = filtered_df[filtered_df['Animal Type'].astype(str).str.contains(selected_animal, case=False, na=False)]
 
-    # Compute Operational Metrics
     total_fed = filtered_df['Amount Given'].sum()
     total_excess = filtered_df['Excess Food'].sum()
     total_net = filtered_df['Net Consumed'].sum()
@@ -205,7 +211,6 @@ if not df.empty:
 
     st.divider()
     
-    # Food Type Summary Tally Breakdown Table
     st.markdown("### 🌾 Food Stock Consumption Summary")
     
     if not filtered_df.empty:
@@ -246,7 +251,6 @@ if not df.empty:
     display_df['Net Consumed'] = filtered_df['Net Consumed'].map(format_val)
     display_df['Fed By'] = filtered_df['Fed By'].astype(str)
 
-    # Sort the table logically by Date (descending) and Animal Type
     display_df = display_df.sort_values(by=['Date', 'Animal Type'], ascending=[False, True])
 
     st.dataframe(
